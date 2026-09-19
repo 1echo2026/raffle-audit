@@ -35,6 +35,9 @@
       <label>活动周期名称(用于标题)
         <input id="period" type="text" value="9.9-9.16">
       </label>
+      <label>期数(话术用,如 82)
+        <input id="qishu" type="text" value="82">
+      </label>
       <label>问卷提交开始时间(留空不限制)
         <input id="formStart" type="datetime-local">
       </label>
@@ -72,7 +75,7 @@
     <div id="tplList" class="tpl-list"></div>
     <div class="tpl-actions">
       <button id="btnResetTpl" class="btn plain">↺ 恢复默认模板</button>
-      <span class="muted">话术中可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注}</span>
+      <span class="muted">话术中可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注} {期数} {周期} {出单时间} {单数}</span>
     </div>
 
     <button id="btnRun" class="btn primary">▶ 开始审核</button>

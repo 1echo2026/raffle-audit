@@ -124,9 +124,13 @@
     if (r.indexOf('问卷提交时间') === 0 && r.indexOf('不在本期活动时间范围内') > 0) return '提交时间超范围';
     if (r.indexOf('手机号格式不正确') >= 0) return '手机号格式错误';
     if (r.indexOf('手机号在订单池中查找不到') >= 0) return '手机号未查到';
+    if (r.indexOf('非转介绍') >= 0) return '非转介绍';
+    if (r.indexOf('非销售直推') >= 0) return '非销售直推';
     if (r.indexOf('未在有效订单池查找到') >= 0) return '订单未达有效条件';
     if (r.indexOf('问卷头像与中奖名单无法匹配') >= 0) return '头像无法匹配';
-    if (r.indexOf('应属') >= 0 && r.indexOf('奖池抽奖') >= 0) return '抽错奖池';
+    if (r.indexOf('奖池抽奖') >= 0 && (r.indexOf('应属') >= 0 || r.indexOf('应直接') >= 0 || r.indexOf('应在') >= 0)) {
+      return s.expected_pool === '巅峰' ? '抽错奖池（应属巅峰）' : '抽错奖池（应属进阶）';
+    }
     if (s.abnormal_status) return '含退款/换课订单';
     return '其他异常';
   }
@@ -139,6 +143,7 @@
     var THRESHOLD = toFloat(params.threshold != null ? params.threshold : 20000);
     // 可配置的时间范围(为空表示不限制)
     var PERIOD = str(params.period);
+    var QISHU = str(params.qishu);
     var FORM_START = parseDt(params.formStart), FORM_END = parseDt(params.formEnd);      // 问卷提交时间范围
     var ORDER_START = parseDt(params.orderStart), ORDER_END = parseDt(params.orderEnd);  // 订单支付时间范围
 
@@ -251,7 +256,7 @@
         return [oid, ghOrders[gh][oid][0], ghOrders[gh][oid][1]];
       });
       entries.sort(function (a, b) { return (a[1] ? a[1].getTime() : 8.64e15) - (b[1] ? b[1].getTime() : 8.64e15); });
-      var total = 0, maxSingle = 0, cum = 0, peakSince = null;
+      var total = 0, maxSingle = 0, cum = 0, peakSince = null, peakOrders = 0;
       entries.forEach(function (e) {
         var oid = e[0], dt = e[1], amt = e[2];
         total += amt;
@@ -263,6 +268,7 @@
         o.cum_after = Math.round(cum * 100) / 100;
         o.direct_peak = amt >= THRESHOLD;
         if (isPeak && !peakSince) peakSince = dt;
+        if (isPeak) peakOrders++;
       });
       var votes = ghNameVotes[gh], bestName = '', bestN = -1;
       Object.keys(votes).forEach(function (n) { if (votes[n] > bestN) { bestN = votes[n]; bestName = n; } });
@@ -271,7 +277,8 @@
         total: Math.round(total * 100) / 100,
         max_single: Math.round(maxSingle * 100) / 100,
         row_count: ghRowCnt[gh] || 0,
-        peak_since: peakSince
+        peak_since: peakSince,
+        peak_orders: peakOrders
       };
     });
 
@@ -309,7 +316,13 @@
         s.order_count = st.row_count;
         s.max_single_order = st.max_single;
         s.peak_since = st.peak_since;
+        s.peak_orders = st.peak_orders || 0;
       }
+      s.order_time = '';
+      rows.forEach(function (r) {
+        if (r.dt && (!s.order_time || r.dt > s.order_time)) s.order_time = r.dt;
+      });
+      s.order_time = s.order_time ? fmtDt(s.order_time) : '';
       var oidMap = {}, relInfos = [];
       rows.forEach(function (r) { if (r.order_id) oidMap[r.order_id] = 1; });
       Object.keys(oidMap).forEach(function (oid) { if (orderAgg[oid]) relInfos.push(orderAgg[oid]); });
@@ -367,13 +380,19 @@
         reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
       } else if (!s.match) {
         var mp = maskPhone(s.phone);
-        var inRaw = false;
+        var inRaw = false, rawCh = '';
         (input.rawOrders.qiangji || []).concat(input.rawOrders.shengxue || []).forEach(function (r) {
-          if (r && str(r[2]) === mp) inRaw = true;
+          if (r && str(r[2]) === mp) { inRaw = true; rawCh = str(r[20]); }
         });
-        reasons.push(inRaw
-          ? '未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）'
-          : '手机号在订单池中查找不到，疑似输入错误');
+        if (inRaw && rawCh.indexOf('app_mingshitj') === 0) {
+          reasons.push('未在有效订单池查找到（订单归属渠道非转介绍渠道：' + rawCh + '，不属于转介绍出单）');
+        } else if (inRaw && rawCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
+          reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + rawCh + '，属于辅导leads接单）');
+        } else {
+          reasons.push(inRaw
+            ? '未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）'
+            : '手机号在订单池中查找不到，疑似输入错误');
+        }
       }
       if (!s.avatar_matched) reasons.push('问卷头像与中奖名单无法匹配');
       if (s.match && s.expected_pool && s.pool !== s.expected_pool) {
@@ -449,7 +468,8 @@
         phone: s.phone, prize_name: s.prize_name, prize_level: s.prize_level,
         submit_time: s.submit_time_raw, abnormal_type: s.abnormal_type,
         reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
-        expected_pool: s.expected_pool
+        expected_pool: s.expected_pool, period: PERIOD, qishu: QISHU,
+        order_time: s.order_time || '', peak_orders: s.peak_orders || 0
       };
     }
     invalidList.forEach(function (s) { communication.push(commBase(s)); });
@@ -458,7 +478,7 @@
 
     return {
       params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD,
-               period: PERIOD, formStart: FORM_START, formEnd: FORM_END,
+               period: PERIOD, qishu: QISHU, formStart: FORM_START, formEnd: FORM_END,
                orderStart: ORDER_START, orderEnd: ORDER_END},
       validPools: {
         '强基': {title: fQj.title, header: fQj.header, kept: fQj.kept,
