@@ -63,10 +63,13 @@
 
   function parsePrizeText(text) {
     if (!text) return {level: null, name: ''};
-    var m = String(text).trim().match(/^([一二三四五六七八九十\d]+)等奖[：:]\s*(.+)$/);
-    if (!m) return {level: null, name: String(text).trim()};
+    var s = String(text).trim();
+    // 兼容 "一等奖：冰箱" "一等奖 冰箱" "1等奖·冰箱" "一等奖冰箱" 等格式
+    var m = s.match(/^([一二三四五六七八九十\d]+)等奖[：:、\s·]*(.*)$/);
+    if (!m) return {level: null, name: s};
     var lv = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : (CN_NUM[m[1]] || 0);
-    return {level: lv, name: m[2].trim()};
+    var name = (m[2] || '').trim();
+    return {level: lv, name: name || s};
   }
 
   // ---------- 读取结构(输入均为二维数组) ----------
@@ -451,11 +454,19 @@
     function tierGroups(pool, maxLevel) {
       var buckets = {};
       for (var lv = 1; lv <= maxLevel; lv++) buckets[lv] = [];
+      var ungraded = [];
       validList.forEach(function (s) {
-        if (s.pool !== pool || !s.prize_level) return;
-        if (!buckets[s.prize_level]) buckets[s.prize_level] = [];
-        buckets[s.prize_level].push(s);
+        if (s.pool !== pool) return;
+        if (s.prize_level && buckets[s.prize_level]) buckets[s.prize_level].push(s);
+        else ungraded.push(s);
       });
+      function toRow(s) {
+        var b = s.base;
+        if (b.lastIndexOf('基地') === b.length - 2) b = b.slice(0, -2);
+        return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
+                nickname: s.nickname, redeem: s.win_redeem,
+                order_time: s.order_time || '', total_amount: s.total_amount || 0};
+      }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
         if (!buckets[l] || !buckets[l].length) continue;
@@ -463,12 +474,19 @@
           level: l,
           level_text: NUM_CN[l] + '等奖',
           prize: buckets[l][0].prize_name,
-          rows: buckets[l].map(function (s) {
-            var b = s.base;
-            if (b.lastIndexOf('基地') === b.length - 2) b = b.slice(0, -2);
-            return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
-                    nickname: s.nickname, redeem: s.win_redeem};
-          })
+          rows: buckets[l].map(toRow)
+        });
+      }
+      // 问卷奖品文本无法解析出等级的行:不丢弃,按奖品名称聚合展示
+      if (ungraded.length) {
+        var byName = {}, order = [];
+        ungraded.forEach(function (s) {
+          var k = s.prize_name || '未填写奖品';
+          if (!byName[k]) { byName[k] = []; order.push(k); }
+          byName[k].push(s);
+        });
+        order.forEach(function (k) {
+          out.push({level: null, level_text: '奖品', prize: k, rows: byName[k].map(toRow)});
         });
       }
       return out;

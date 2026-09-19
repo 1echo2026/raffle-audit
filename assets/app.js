@@ -113,11 +113,38 @@
     return name.indexOf('巅峰') >= 0 ? 'dfDist' : 'jjDist';
   }
 
+  // 内容特征打分:用于在多个 sheet 中挑选该文件真正有用的那个
+  // (腾讯问卷导出的文件常含说明/透视 sheet,真正的表单可能在后续 sheet)
+  function scoreSheet(rows, fname) {
+    var hh = [];
+    (rows[0] || []).concat(rows[1] || []).forEach(function (x) { hh.push(String(x || '').trim()); });
+    var j = hh.join(',');
+    var s = 0;
+    if (j.indexOf('账号ID') >= 0) s += 10;
+    if (j.indexOf('订单ID') >= 0) s += 5;
+    if (j.indexOf('用户昵称') >= 0) s += 10;
+    if (j.indexOf('出单') >= 0) s += 5;
+    if (j.indexOf('奖项名称') >= 0) s += 8;
+    if (j.indexOf('中奖者昵称') >= 0) s += 8;
+    if (j.indexOf('中奖者头像') >= 0) s += 6;
+    if (j.indexOf('提交时间') >= 0) s += 4;
+    if (fname.indexOf('问卷') >= 0 && j.indexOf('用户昵称') >= 0) s += 15;
+    if (fname.indexOf('名单') >= 0 && (j.indexOf('奖项名称') >= 0 || j.indexOf('中奖者昵称') >= 0)) s += 10;
+    if (fname.indexOf('订单池') >= 0 && j.indexOf('账号ID') >= 0) s += 15;
+    return s;
+  }
+
   async function readFile(file) {
     var buf = await file.arrayBuffer();
     var wb = XLSX.read(buf, {cellDates: true});
-    var ws = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: ''});
+    var best = null, bestScore = -1, bestSn = wb.SheetNames[0];
+    wb.SheetNames.forEach(function (sn) {
+      var ws = wb.Sheets[sn];
+      var rows = XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: ''});
+      var s = scoreSheet(rows, file.name);
+      if (s > bestScore) { bestScore = s; best = rows; bestSn = sn; }
+    });
+    return best;
   }
 
   async function handleFiles(fileList) {
@@ -395,21 +422,33 @@
     return ws;
   }
 
-  // 明细表 sheet:基地/姓名/工号/奖项/奖品
+  // 明细表 sheet:基地/姓名/奖品奖项与名/工号/出单手机号/业绩归属时间/累计订单金额(金额倒序)
   function detailSheet(groupsDF, groupsJJ) {
-    var rows = [['序号','奖池','基地','姓名','工号','出单手机号','奖项等级','奖品名称','核销情况']];
-    var i = 0;
+    var rows = [['序号','奖池','基地','姓名','奖品奖项与名','工号','出单手机号','业绩归属时间','累计订单金额']];
+    var all = [];
     [['巅峰', groupsDF], ['进阶', groupsJJ]].forEach(function (pp) {
       pp[1].forEach(function (g) {
         g.rows.forEach(function (x) {
-          i++;
-          rows.push([i, pp[0], x.base, x.name, x.gonghao, x.phone, g.level_text, g.prize, x.redeem || '']);
+          all.push({
+            pool: pp[0], base: x.base, name: x.name, gonghao: x.gonghao, phone: x.phone,
+            prize: (g.level_text && g.level_text !== '奖品' ? g.level_text + ' ' : '') + g.prize,
+            order_time: x.order_time || '', amount: x.total_amount || 0
+          });
         });
       });
     });
+    all.sort(function (a, b) { return b.amount - a.amount; });
+    all.forEach(function (x, i) {
+      rows.push([i + 1, x.pool, x.base, x.name, x.prize, x.gonghao, x.phone, x.order_time, x.amount]);
+    });
     var ws = aoa(rows);
     styleAll(ws, 9);
-    setColWidths(ws, [6, 8, 10, 10, 12, 14, 10, 26, 10]);
+    setColWidths(ws, [6, 8, 12, 10, 30, 12, 14, 20, 15]);
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      var c8 = ws[XLSX.utils.encode_cell({r: R, c: 8})];
+      if (c8) { c8.t = 'n'; c8.z = MONEY; }
+    }
     return ws;
   }
 
@@ -480,35 +519,13 @@
     downloadValidPool('强基', r.validPools['强基']);
     downloadValidPool('升学', r.validPools['升学']);
 
-    XLSX.writeFile((function () {
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '基地姓名工号奖项奖品');
-      return wb;
-    })(), '中奖人员明细表（基地姓名工号奖项奖品）.xlsx');
-
-    XLSX.writeFile((function () {
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单');
-      return wb;
-    })(), '获奖名单（图片格式）.xlsx');
-
-    XLSX.writeFile((function () {
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常沟通话术');
-      return wb;
-    })(), '异常名单沟通话术.xlsx');
-
+    // 最终产物: 1 个 Excel,3 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单沟通话术)
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheetFromRecords(r.validList.filter(function (s) { return s.pool === '进阶'; }), AUDIT_W), '进阶有效名单');
-    XLSX.utils.book_append_sheet(wb, sheetFromRecords(r.validList.filter(function (s) { return s.pool === '巅峰'; }), AUDIT_W), '巅峰有效名单');
-    XLSX.utils.book_append_sheet(wb, sheetFromRecords(r.invalidList, AUDIT_W.concat([60]), 19), '无效名单（含原因）');
-    XLSX.utils.book_append_sheet(wb, duplicateSheet(r.duplicates), '重复抽奖剔除');
-    XLSX.utils.book_append_sheet(wb, nameSheet(r.nameGhRows), '姓名工号对照');
-    XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '基地姓名工号奖项奖品');
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
+    XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖人员明细表');
     XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
     XLSX.writeFile(wb, '中奖名单审核结果.xlsx');
-    log('已导出 6 个 Excel 文件');
+    log('已导出: 中奖名单审核结果.xlsx(含 获奖名单(图片格式) / 中奖人员明细表 / 异常名单沟通话术 3 个子表) + 强基/升学有效订单池');
   }
 
   // ---------- 模板编辑区 ----------
