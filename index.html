@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中奖名单审核工具 · 进阶/巅峰奖池(9.9-9.16)</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <h1>🎁 中奖名单审核工具</h1>
+    <p class="sub">上传 6 个 Excel → 自动过滤有效订单 · 头像/加密手机号匹配 · 按工号累计逐单判定进阶/巅峰奖池 → 一键导出结果。全部在浏览器本地计算,文件不会上传服务器。</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 第 1 步:上传 -->
+  <section class="card-panel">
+    <h2><span class="step">1</span> 上传文件(6 个 .xlsx,可一次全选拖入,自动识别)</h2>
+    <div id="dropzone" class="dropzone">
+      <div class="dz-icon">📂</div>
+      <div>点击选择或把 6 个 Excel 拖到这里</div>
+      <div class="muted">2 个原始订单池 + 进阶/巅峰中奖名单(奖品发放表) + 进阶/巅峰问卷(表单)</div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none">
+    </div>
+    <div id="slots" class="slots"></div>
+  </section>
+
+  <!-- 第 2 步:参数 -->
+  <section class="card-panel">
+    <h2><span class="step">2</span> 确认规则参数(一般无需修改)</h2>
+    <div class="params">
+      <label>有效渠道前缀
+        <input id="prefix" type="text" value="grow_xcg_zhuanjs_xiaoshou">
+      </label>
+      <label>最低订单金额(元)
+        <input id="minAmount" type="number" value="999">
+      </label>
+      <label>巅峰门槛累计金额(元)
+        <input id="threshold" type="number" value="20000">
+      </label>
+      <label>巅峰奖池标题(图片格式用)
+        <input id="titleDF" type="text" value="巅峰奖池（9.9-9.16）获奖名单">
+      </label>
+      <label>进阶奖池标题(图片格式用)
+        <input id="titleJJ" type="text" value="进阶奖池（9.9-9.16）获奖名单">
+      </label>
+    </div>
+    <div class="rules muted">
+      判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。
+    </div>
+    <button id="btnRun" class="btn primary">▶ 开始审核</button>
+    <div id="log" class="log"></div>
+  </section>
+
+  <!-- 结果 -->
+  <section id="results" class="card-panel" style="display:none">
+    <h2><span class="step">3</span> 审核结果与导出</h2>
+    <div id="stats" class="stats"></div>
+    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(5 个文件)</button>
+    <p class="muted">包含:强基/升学有效订单池、中奖人员明细表(基地/姓名/工号/奖项/奖品)、获奖名单(图片格式·合并单元格粉头)、中奖名单审核结果总表(进阶有效/巅峰有效/无效名单/重复剔除/姓名工号对照)</p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
+      <button class="tab" data-tab="t-detail">📋 中奖人员明细表</button>
+      <button class="tab" data-tab="t-invalid">❌ 无效名单</button>
+    </div>
+    <div id="t-image" class="tabpane active"><div id="previewImage" class="preview"></div></div>
+    <div id="t-detail" class="tabpane"><div id="previewDetail" class="preview scroll"></div></div>
+    <div id="t-invalid" class="tabpane"><div id="previewInvalid" class="preview scroll"></div></div>
+  </section>
+
+  <footer class="foot muted">
+    纯静态页面 · 基于 SheetJS(xlsx-js-style)本地解析 Excel · 可免费部署到 GitHub Pages
+  </footer>
+</main>
+
+<script src="assets/xlsx.bundle.js"></script>
+<script src="assets/audit-core.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.querySelectorAll('.tab').forEach(function (t) {
+  t.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+    document.querySelectorAll('.tabpane').forEach(function (x) { x.classList.remove('active'); });
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

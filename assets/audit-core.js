@@ -1,0 +1,440 @@
+/*!
+ * audit-core.js  中奖名单审核核心逻辑(纯 JS,无第三方依赖)
+ * 与 Python 版 scripts/audit_winners.py + filter_orders.py 口径一致:
+ *  1) 有效订单: 订单归属渠道前缀 grow_xcg_zhuanjs_xiaoshou 且 订单金额 >= 999
+ *  2) 头像匹配中奖名单 ↔ 问卷;加密手机号(前3位****后4位)匹配订单
+ *  3) 一个手机号只保留提交时间最早的一次抽奖
+ *  4) 按工号累计有效出单逐单判池:
+ *     - 单笔订单金额 >= 2万:该订单直接归巅峰
+ *     - 多手机号累计:跨2万的那笔及之后出单归巅峰,未满2万时归进阶
+ *  5) 中奖手机号关联订单归哪个池,本次抽奖就必须在哪个池
+ */
+(function (global) {
+  'use strict';
+
+  var CN_NUM = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8};
+  var NUM_CN = {1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八'};
+
+  function str(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).trim();
+  }
+
+  function toFloat(v) {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var n = parseFloat(String(v).replace(/,/g, ''));
+    return isFinite(n) ? n : 0;
+  }
+
+  function parseDt(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+    var s = String(v).trim();
+    if (!s) return null;
+    var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (m) {
+      return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    }
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function fmtDt(d) {
+    if (!d) return '';
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function fmtMoney(n) {
+    return toFloat(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function cleanPhone(raw) {
+    if (raw === null || raw === undefined) return {phone: '', ok: false};
+    var m = String(raw).match(/1\d{10}/);
+    return m ? {phone: m[0], ok: true} : {phone: String(raw).trim(), ok: false};
+  }
+
+  function maskPhone(p) {
+    return p.length >= 7 ? p.slice(0, 3) + '****' + p.slice(-4) : p;
+  }
+
+  function parsePrizeText(text) {
+    if (!text) return {level: null, name: ''};
+    var m = String(text).trim().match(/^([一二三四五六七八九十\d]+)等奖[：:]\s*(.+)$/);
+    if (!m) return {level: null, name: String(text).trim()};
+    var lv = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : (CN_NUM[m[1]] || 0);
+    return {level: lv, name: m[2].trim()};
+  }
+
+  // ---------- 读取结构(输入均为二维数组) ----------
+  function loadDistribution(rows) {
+    var map = {};
+    var curLevel = null;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i] || [];
+      var c0 = str(row[0]);
+      var m = c0.match(/^([一二三四五六七八九十]+)等奖[：:]/);
+      if (m && c0.indexOf('×') >= 0) { curLevel = CN_NUM[m[1]]; continue; }
+      if (c0 === '奖项名称') continue;
+      if (row[1] && row[2] && str(row[2]).indexOf('http') === 0) {
+        map[str(row[2])] = {
+          level: curLevel,
+          prize_name: c0,
+          nickname: str(row[1]),
+          redeem: str(row[3])
+        };
+      }
+    }
+    return map;
+  }
+
+  function loadQuestionnaire(rows, pool) {
+    var out = [];
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i] || [];
+      if (!row[6]) continue;
+      var pp = parsePrizeText(row[2]);
+      var cp = cleanPhone(row[6]);
+      var dt = parseDt(row[3]);
+      out.push({
+        pool: pool,
+        nickname: str(row[0]),
+        avatar: str(row[1]),
+        prize_level: pp.level,
+        prize_name: pp.name,
+        submit_time_raw: dt ? fmtDt(dt) : str(row[3]),
+        submit_dt: dt,
+        base: str(row[4]),
+        real_name: str(row[5]),
+        phone: cp.phone,
+        phone_format_ok: cp.ok
+      });
+    }
+    return out;
+  }
+
+  // ---------- 主流程 ----------
+  function audit(input) {
+    var params = input.params || {};
+    var PREFIX = params.channelPrefix || 'grow_xcg_zhuanjs_xiaoshou';
+    var MIN_AMT = toFloat(params.minAmount != null ? params.minAmount : 999);
+    var THRESHOLD = toFloat(params.threshold != null ? params.threshold : 20000);
+
+    // 1) 过滤有效订单
+    function filterPool(rows) {
+      var title = rows[0] || [];
+      var header = rows[1] || [];
+      var kept = [], rejCh = 0, rejAmt = 0;
+      for (var i = 2; i < rows.length; i++) {
+        var r = rows[i];
+        if (!r || !r[0]) continue;
+        var ch = str(r[20]);
+        var amt = toFloat(r[4]);
+        if (ch.indexOf(PREFIX) !== 0) { rejCh++; continue; }
+        if (amt < MIN_AMT) { rejAmt++; continue; }
+        kept.push(r);
+      }
+      return {title: title, header: header, kept: kept, rejChannel: rejCh, rejAmount: rejAmt, total: kept.length + rejCh + rejAmt};
+    }
+
+    var fQj = filterPool(input.rawOrders.qiangji || []);
+    var fSx = filterPool(input.rawOrders.shengxue || []);
+
+    function toRec(r, source) {
+      return {
+        source: source,
+        account: str(r[0]),
+        cust_name: str(r[1]),
+        masked: str(r[2]),
+        order_id: str(r[3]),
+        amount: toFloat(r[4]),
+        pay_time: str(r[5]),
+        dt: parseDt(r[5]),
+        status: str(r[6]),
+        product_id: str(r[10]),
+        sales_name: str(r[24]),
+        gonghao: str(r[25])
+      };
+    }
+
+    var validRows = [];
+    fQj.kept.forEach(function (r) { validRows.push(toRec(r, '强基')); });
+    fSx.kept.forEach(function (r) { validRows.push(toRec(r, '升学')); });
+
+    // (订单ID,商品ID) 去重,防两池重复导出
+    var seenKey = {}, deduped = [];
+    validRows.forEach(function (r) {
+      var k = r.order_id + '|' + r.product_id;
+      if (seenKey[k]) return;
+      seenKey[k] = 1;
+      deduped.push(r);
+    });
+    validRows = deduped;
+
+    // 2) 中奖名单 + 问卷
+    var winners = {
+      '进阶': loadDistribution(input.distribution['进阶'] || []),
+      '巅峰': loadDistribution(input.distribution['巅峰'] || [])
+    };
+    var submissions = []
+      .concat(loadQuestionnaire(input.questionnaire['进阶'] || [], '进阶'))
+      .concat(loadQuestionnaire(input.questionnaire['巅峰'] || [], '巅峰'));
+
+    // 3) 工号时间线 + 逐单判池
+    var ghRowCnt = {}, ghNameVotes = {}, orderAgg = {};
+    function inc(obj, k, n) { obj[k] = (obj[k] || 0) + (n || 1); }
+    validRows.forEach(function (r) {
+      if (!r.gonghao) return;
+      inc(ghRowCnt, r.gonghao);
+      ghNameVotes[r.gonghao] = ghNameVotes[r.gonghao] || {};
+      inc(ghNameVotes[r.gonghao], r.sales_name);
+      if (orderAgg[r.order_id]) {
+        orderAgg[r.order_id].amount += r.amount;
+      } else {
+        orderAgg[r.order_id] = {
+          amount: r.amount, dt: r.dt, masked: r.masked, gonghao: r.gonghao,
+          pool: '进阶', cum_after: 0, direct_peak: false
+        };
+      }
+    });
+
+    var ghOrders = {};
+    Object.keys(orderAgg).forEach(function (oid) {
+      var gh = orderAgg[oid].gonghao;
+      (ghOrders[gh] = ghOrders[gh] || {})[oid] = [orderAgg[oid].dt, orderAgg[oid].amount];
+    });
+
+    var ghStats = {};
+    Object.keys(ghOrders).forEach(function (gh) {
+      var entries = Object.keys(ghOrders[gh]).map(function (oid) {
+        return [oid, ghOrders[gh][oid][0], ghOrders[gh][oid][1]];
+      });
+      entries.sort(function (a, b) { return (a[1] ? a[1].getTime() : 8.64e15) - (b[1] ? b[1].getTime() : 8.64e15); });
+      var total = 0, maxSingle = 0, cum = 0, peakSince = null;
+      entries.forEach(function (e) {
+        var oid = e[0], dt = e[1], amt = e[2];
+        total += amt;
+        if (amt > maxSingle) maxSingle = amt;
+        cum += amt;
+        var isPeak = amt >= THRESHOLD || cum >= THRESHOLD;
+        var o = orderAgg[oid];
+        o.pool = isPeak ? '巅峰' : '进阶';
+        o.cum_after = Math.round(cum * 100) / 100;
+        o.direct_peak = amt >= THRESHOLD;
+        if (isPeak && !peakSince) peakSince = dt;
+      });
+      var votes = ghNameVotes[gh], bestName = '', bestN = -1;
+      Object.keys(votes).forEach(function (n) { if (votes[n] > bestN) { bestN = votes[n]; bestName = n; } });
+      ghStats[gh] = {
+        sales_name: bestName,
+        total: Math.round(total * 100) / 100,
+        max_single: Math.round(maxSingle * 100) / 100,
+        row_count: ghRowCnt[gh] || 0,
+        peak_since: peakSince
+      };
+    });
+
+    // 4) 掩码 -> 有效订单行
+    var validIndex = {};
+    validRows.forEach(function (r) {
+      if (!r.masked) return;
+      (validIndex[r.masked] = validIndex[r.masked] || []).push(r);
+    });
+
+    // 5) 匹配 + 期望奖池
+    submissions.forEach(function (s) {
+      var win = winners[s.pool][s.avatar];
+      s.avatar_matched = !!win;
+      s.win_nickname = win ? win.nickname : '';
+      s.win_redeem = win ? win.redeem : '';
+      s.match = null;
+      s.total_amount = 0; s.order_count = 0; s.max_single_order = 0;
+      s.peak_since = null; s.expected_pool = ''; s.peak_reason = '';
+      s.account = ''; s.sales_name = ''; s.gonghao = ''; s.abnormal_status = '';
+      if (!s.phone_format_ok) return;
+      var rows = validIndex[maskPhone(s.phone)] || [];
+      var acctSet = {};
+      rows.forEach(function (r) { acctSet[r.account] = 1; });
+      if (!rows.length || Object.keys(acctSet).length > 1) return;
+      s.match = 'ok';
+      s.account = rows[0].account;
+      var nv = {}, gv = {};
+      rows.forEach(function (r) { inc(nv, r.sales_name); inc(gv, r.gonghao); });
+      s.sales_name = Object.keys(nv).sort(function (a, b) { return nv[b] - nv[a]; })[0] || '';
+      s.gonghao = Object.keys(gv).sort(function (a, b) { return gv[b] - gv[a]; })[0] || '';
+      var st = ghStats[s.gonghao];
+      if (st) {
+        s.total_amount = st.total;
+        s.order_count = st.row_count;
+        s.max_single_order = st.max_single;
+        s.peak_since = st.peak_since;
+      }
+      var oidMap = {}, relInfos = [];
+      rows.forEach(function (r) { if (r.order_id) oidMap[r.order_id] = 1; });
+      Object.keys(oidMap).forEach(function (oid) { if (orderAgg[oid]) relInfos.push(orderAgg[oid]); });
+      if (relInfos.length) {
+        var hasPeak = relInfos.some(function (o) { return o.pool === '巅峰'; });
+        s.expected_pool = hasPeak ? '巅峰' : '进阶';
+        if (hasPeak) {
+          var direct = relInfos.filter(function (o) { return o.direct_peak; });
+          if (direct.length) {
+            var o = direct.sort(function (a, b) { return b.amount - a.amount; })[0];
+            s.peak_reason = '该出单手机号存在单笔订单金额' + fmtMoney(o.amount) + '元≥2万元' +
+              '（支付于' + fmtDt(o.dt) + '），应直接在巅峰奖池抽奖';
+          } else {
+            var o2 = relInfos.filter(function (o) { return o.pool === '巅峰'; })[0];
+            s.peak_reason = '该手机号订单支付于' + fmtDt(o2.dt) + '时，工号累计有效出单金额已达' +
+              fmtMoney(o2.cum_after) + '元（≥2万），累计达2万之后的出单应在巅峰奖池抽奖';
+          }
+        } else {
+          var last = relInfos.sort(function (a, b) { return b.cum_after - a.cum_after; })[0];
+          s.peak_reason = '该手机号订单支付于' + fmtDt(last.dt) + '时，工号累计有效出单金额仅' +
+            fmtMoney(last.cum_after) + '元（<2万），应在进阶奖池抽奖';
+        }
+      }
+      var ab = {};
+      rows.forEach(function (r) { if (r.status === '完全退款' || r.status === '换课原订单') ab[r.status] = 1; });
+      s.abnormal_status = Object.keys(ab).join('、');
+    });
+
+    // 6) 一手机号一单去重
+    var groups = {};
+    submissions.forEach(function (s, i) { if (s.phone_format_ok) (groups[s.phone] = groups[s.phone] || []).push(i); });
+    var duplicates = [];
+    Object.keys(groups).forEach(function (phone) {
+      var idxs = groups[phone];
+      if (idxs.length <= 1) return;
+      idxs.sort(function (a, b) {
+        var da = submissions[a].submit_dt, db = submissions[b].submit_dt;
+        return (da ? da.getTime() : 8.64e15) - (db ? db.getTime() : 8.64e15);
+      });
+      for (var k = 1; k < idxs.length; k++) {
+        submissions[idxs[k]].is_duplicate = true;
+        duplicates.push(submissions[idxs[k]]);
+      }
+    });
+    submissions.forEach(function (s) { s.is_duplicate = !!s.is_duplicate; });
+
+    // 7) 资格判定
+    var validList = [], invalidList = [];
+    submissions.forEach(function (s) {
+      var reasons = [], remark = '';
+      if (!s.phone_format_ok) {
+        reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
+      } else if (!s.match) {
+        var mp = maskPhone(s.phone);
+        var inRaw = false;
+        (input.rawOrders.qiangji || []).concat(input.rawOrders.shengxue || []).forEach(function (r) {
+          if (r && str(r[2]) === mp) inRaw = true;
+        });
+        reasons.push(inRaw
+          ? '未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）'
+          : '手机号在订单池中查找不到，疑似输入错误');
+      }
+      if (!s.avatar_matched) reasons.push('问卷头像与中奖名单无法匹配');
+      if (s.match && s.expected_pool && s.pool !== s.expected_pool) {
+        reasons.push(s.peak_reason + '，但本次在' + s.pool + '奖池抽奖');
+      }
+      if (s.abnormal_status) remark += '含' + s.abnormal_status + '订单，请核查';
+      s.invalid_reasons = reasons.join('；');
+      s.remark = remark;
+      if (s.is_duplicate) return;
+      (reasons.length ? invalidList : validList).push(s);
+    });
+
+    // 8) 姓名↔工号对照
+    var nameGh = {}, ghPhones = {};
+    validRows.forEach(function (r) {
+      if (r.sales_name && r.gonghao) (nameGh[r.sales_name] = nameGh[r.sales_name] || {})[r.gonghao] = 1;
+    });
+    validList.concat(invalidList).forEach(function (s) {
+      if (s.match === 'ok' && s.gonghao) (ghPhones[s.gonghao] = ghPhones[s.gonghao] || {})[s.phone] = 1;
+    });
+    var dupNames = {};
+    Object.keys(nameGh).forEach(function (n) { if (Object.keys(nameGh[n]).length > 1) dupNames[n] = 1; });
+
+    var nameGhRows = [];
+    Object.keys(nameGh).sort().forEach(function (name) {
+      Object.keys(nameGh[name]).sort().forEach(function (gh) {
+        var st = ghStats[gh] || {};
+        nameGhRows.push({
+          name: name,
+          gonghao: gh,
+          phones: Object.keys(ghPhones[gh] || {}).sort(),
+          gh_count: Object.keys(nameGh[name]).length,
+          total: st.total || 0,
+          peak_since: st.peak_since || null,
+          is_dup: !!dupNames[name]
+        });
+      });
+    });
+
+    // 9) 图片格式分组(仅有效、去重后;保持问卷顺序)
+    function tierGroups(pool, maxLevel) {
+      var buckets = {};
+      for (var lv = 1; lv <= maxLevel; lv++) buckets[lv] = [];
+      validList.forEach(function (s) {
+        if (s.pool !== pool || !s.prize_level) return;
+        if (!buckets[s.prize_level]) buckets[s.prize_level] = [];
+        buckets[s.prize_level].push(s);
+      });
+      var out = [];
+      for (var l = 1; l <= maxLevel; l++) {
+        if (!buckets[l] || !buckets[l].length) continue;
+        out.push({
+          level: l,
+          level_text: NUM_CN[l] + '等奖',
+          prize: buckets[l][0].prize_name,
+          rows: buckets[l].map(function (s) {
+            var b = s.base;
+            if (b.lastIndexOf('基地') === b.length - 2) b = b.slice(0, -2);
+            return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
+                    nickname: s.nickname, redeem: s.win_redeem};
+          })
+        });
+      }
+      return out;
+    }
+
+    return {
+      params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD},
+      validPools: {
+        '强基': {title: fQj.title, header: fQj.header, kept: fQj.kept,
+                 stats: {total: fQj.total, rejChannel: fQj.rejChannel, rejAmount: fQj.rejAmount, kept: fQj.kept.length}},
+        '升学': {title: fSx.title, header: fSx.header, kept: fSx.kept,
+                 stats: {total: fSx.total, rejChannel: fSx.rejChannel, rejAmount: fSx.rejAmount, kept: fSx.kept.length}}
+      },
+      stats: {
+        submitted: submissions.length,
+        valid: validList.length,
+        validJJ: validList.filter(function (s) { return s.pool === '进阶'; }).length,
+        validDF: validList.filter(function (s) { return s.pool === '巅峰'; }).length,
+        invalid: invalidList.length,
+        duplicates: duplicates.length,
+        ghCount: Object.keys(ghStats).length,
+        ghPeak: Object.keys(ghStats).filter(function (g) { return ghStats[g].peak_since; }).length
+      },
+      validList: validList,
+      invalidList: invalidList,
+      duplicates: duplicates,
+      nameGhRows: nameGhRows,
+      ghStats: ghStats,
+      groups: {'巅峰': tierGroups('巅峰', 4), '进阶': tierGroups('进阶', 8)}
+    };
+  }
+
+  var api = {
+    audit: audit,
+    parseDt: parseDt,
+    fmtDt: fmtDt,
+    fmtMoney: fmtMoney,
+    cleanPhone: cleanPhone,
+    maskPhone: maskPhone,
+    parsePrizeText: parsePrizeText
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  global.AuditCore = api;
+})(typeof window !== 'undefined' ? window : this);
