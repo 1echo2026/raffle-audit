@@ -30,8 +30,23 @@
 
   <!-- 第 2 步:参数 -->
   <section class="card-panel">
-    <h2><span class="step">2</span> 确认规则参数(一般无需修改)</h2>
+    <h2><span class="step">2</span> 确认规则参数与本期时间范围</h2>
     <div class="params">
+      <label>活动周期名称(用于标题)
+        <input id="period" type="text" value="9.9-9.16">
+      </label>
+      <label>问卷提交开始时间(留空不限制)
+        <input id="formStart" type="datetime-local">
+      </label>
+      <label>问卷提交结束时间(留空不限制)
+        <input id="formEnd" type="datetime-local">
+      </label>
+      <label>订单支付开始时间(留空不限制)
+        <input id="orderStart" type="datetime-local">
+      </label>
+      <label>订单支付结束时间(留空不限制)
+        <input id="orderEnd" type="datetime-local">
+      </label>
       <label>有效渠道前缀
         <input id="prefix" type="text" value="grow_xcg_zhuanjs_xiaoshou">
       </label>
@@ -49,8 +64,17 @@
       </label>
     </div>
     <div class="rules muted">
-      判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。
+      判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。<br>
+      时间范围:填写后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),留空则不限制。修改"活动周期名称"会自动同步下方两个标题。
     </div>
+
+    <h3 class="tpl-title">📞 异常名单沟通话术模板(可编辑,自动保存在本机浏览器)</h3>
+    <div id="tplList" class="tpl-list"></div>
+    <div class="tpl-actions">
+      <button id="btnResetTpl" class="btn plain">↺ 恢复默认模板</button>
+      <span class="muted">话术中可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注}</span>
+    </div>
+
     <button id="btnRun" class="btn primary">▶ 开始审核</button>
     <div id="log" class="log"></div>
   </section>
@@ -59,17 +83,19 @@
   <section id="results" class="card-panel" style="display:none">
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
-    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(5 个文件)</button>
-    <p class="muted">包含:强基/升学有效订单池、中奖人员明细表(基地/姓名/工号/奖项/奖品)、获奖名单(图片格式·合并单元格粉头)、中奖名单审核结果总表(进阶有效/巅峰有效/无效名单/重复剔除/姓名工号对照)</p>
+    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(6 个文件)</button>
+    <p class="muted">包含:强基/升学有效订单池、中奖人员明细表(基地/姓名/工号/奖项/奖品)、获奖名单(图片格式·合并单元格粉头)、中奖名单审核结果总表(进阶有效/巅峰有效/无效名单/重复剔除/姓名工号对照)、异常名单沟通话术表</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
       <button class="tab" data-tab="t-detail">📋 中奖人员明细表</button>
       <button class="tab" data-tab="t-invalid">❌ 无效名单</button>
+      <button class="tab" data-tab="t-comm">📞 异常名单沟通话术</button>
     </div>
     <div id="t-image" class="tabpane active"><div id="previewImage" class="preview"></div></div>
     <div id="t-detail" class="tabpane"><div id="previewDetail" class="preview scroll"></div></div>
     <div id="t-invalid" class="tabpane"><div id="previewInvalid" class="preview scroll"></div></div>
+    <div id="t-comm" class="tabpane"><div id="previewComm" class="preview scroll"></div></div>
   </section>
 
   <footer class="foot muted">

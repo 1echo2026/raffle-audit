@@ -73,6 +73,29 @@ body {
 .rules { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px 14px; line-height: 1.8; margin-bottom: 16px; }
 .rules b { color: var(--red); }
 
+/* 异常话术模板 */
+.tpl-title { font-size: 14.5px; margin: 18px 0 10px; }
+.tpl-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.tpl-row { display: flex; align-items: flex-start; gap: 10px; }
+.tpl-row .tpl-name {
+  flex: 0 0 150px; padding: 8px 10px; font-weight: bold; font-size: 13px;
+  border: 1px solid #d9d9d9; border-radius: 6px; background: #fafafa;
+  word-break: break-all; line-height: 1.4;
+}
+.tpl-row textarea {
+  flex: 1; resize: vertical; padding: 8px 10px; border: 1px solid #d9d9d9;
+  border-radius: 6px; font-size: 13px; font-family: inherit; line-height: 1.6;
+}
+.tpl-row .tpl-del {
+  flex: 0 0 30px; height: 30px; border: 1px solid #ffa39e; border-radius: 6px;
+  background: #fff1f0; color: #cf1322; cursor: pointer; font-weight: bold;
+}
+.tpl-actions { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.btn.plain {
+  background: #fafafa; color: #595959; border: 1px solid #d9d9d9;
+}
+.btn.plain:hover { background: #f0f0f0; }
+
 .btn {
   border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px;
   cursor: pointer; font-weight: bold; transition: .15s;

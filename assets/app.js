@@ -13,6 +13,50 @@
   var files = {};      // key -> {name, rows}
   var lastResult = null;
 
+  // ---------- 异常话术模板(可编辑,存 localStorage) ----------
+  var TPL_KEY = 'raffle_templates_v1';
+  var DEFAULT_TEMPLATES = [
+    {type: '重复抽奖', script: '您好，检测到您使用手机号 {手机号} 在本期活动中提交了多次抽奖。按活动规则，同一手机号仅保留最早一次提交，其余抽奖视为无效，特此告知，感谢您的理解与配合。'},
+    {type: '手机号格式错误', script: '您好，您在问卷中填写的出单手机号 {手机号} 格式有误，在订单池中无法查询到对应出单记录，疑似填写错误。请核对后重新提交，谢谢！'},
+    {type: '手机号未查到', script: '您好，您填写的出单手机号 {手机号} 在本次订单池中未查询到出单记录，疑似填写错误或非本人工号出单。请核实后与工作人员联系，谢谢！'},
+    {type: '订单未达有效条件', script: '您好，您填写的出单手机号 {手机号} 对应的订单未满足本期活动有效条件（订单归属渠道非销售渠道或订单金额不足999元），无法参与本次抽奖，感谢您的参与！'},
+    {type: '头像无法匹配', script: '您好，您在问卷中填写的头像与本期中奖名单无法匹配，请提供中奖名单中对应的头像截图以便核实，谢谢配合！'},
+    {type: '抽错奖池', script: '您好，您的出单金额已达到 {应属奖池} 奖池标准，但本次在 {奖池} 奖池参与抽奖。按活动规则应参与 {应属奖池} 奖池抽奖，请您留意后续安排，谢谢！'},
+    {type: '含退款/换课订单', script: '您好，您关联的出单订单存在退款/换课情况，按活动规则需进一步核查订单状态，请留意后续通知，谢谢配合！'},
+    {type: '提交时间超范围', script: '您好，您在问卷中的提交时间超出本期活动时间范围，无法参与本次抽奖，感谢您的参与！'},
+    {type: '其他异常', script: '您好，您的抽奖记录存在异常情况，需人工进一步核查，请留意后续通知，谢谢配合！'}
+  ];
+  var templates = loadTemplates();
+
+  function loadTemplates() {
+    try {
+      var raw = localStorage.getItem(TPL_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) return arr;
+      }
+    } catch (e) { /* ignore */ }
+    return JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
+  }
+  function saveTemplates() { try { localStorage.setItem(TPL_KEY, JSON.stringify(templates)); } catch (e) { /* ignore */ } }
+
+  function fillScript(tpl, c) {
+    var name = c.real_name || c.nickname || '';
+    var map = {
+      '{姓名}': name, '{手机号}': c.phone, '{奖池}': c.pool,
+      '{应属奖池}': c.expected_pool || '', '{奖品}': c.prize_name || '',
+      '{原因}': c.reason, '{备注}': c.remark
+    };
+    var s = tpl.script || '';
+    Object.keys(map).forEach(function (k) { s = s.split(k).join(map[k] || '未填写'); });
+    return s;
+  }
+  function scriptFor(c) {
+    var t = templates.filter(function (t) { return t.type === c.abnormal_type; })[0];
+    if (!t) t = templates.filter(function (t) { return t.type === '其他异常'; })[0];
+    return t ? fillScript(t, c) : '';
+  }
+
   // ---------- 样式 ----------
   var BORDER = {top: {style: 'thin', color: {rgb: 'FF7F7F7F'}}, bottom: {style: 'thin', color: {rgb: 'FF7F7F7F'}},
                 left: {style: 'thin', color: {rgb: 'FF7F7F7F'}}, right: {style: 'thin', color: {rgb: 'FF7F7F7F'}}};
@@ -48,7 +92,9 @@
     var c0 = String((rows[0] && rows[0][0]) || '').trim();
     var h = (rows[1] || []).map(function (x) { return String(x || '').trim(); });
     var h0 = (rows[0] || []).map(function (x) { return String(x || '').trim(); });
-    if (c0 === '订单池导出结果') {
+    // 订单池: 有"订单池导出结果"标题行,或行0/行1含订单表头特征(账号ID/订单ID)
+    var isOrder = c0 === '订单池导出结果' || h0.indexOf('账号ID') >= 0 || h0.indexOf('订单ID') >= 0 || h.indexOf('账号ID') >= 0;
+    if (isOrder) {
       if (name.indexOf('强基') >= 0) return 'qjRaw';
       if (name.indexOf('升学') >= 0) return 'sxRaw';
       return h.length > 20 ? 'sxRaw' : 'qjRaw';
@@ -133,7 +179,12 @@
         params: {
           channelPrefix: document.getElementById('prefix').value.trim() || 'grow_xcg_zhuanjs_xiaoshou',
           minAmount: parseFloat(document.getElementById('minAmount').value) || 999,
-          threshold: parseFloat(document.getElementById('threshold').value) || 20000
+          threshold: parseFloat(document.getElementById('threshold').value) || 20000,
+          period: document.getElementById('period').value.trim(),
+          formStart: document.getElementById('formStart').value,
+          formEnd: document.getElementById('formEnd').value,
+          orderStart: document.getElementById('orderStart').value,
+          orderEnd: document.getElementById('orderEnd').value
         }
       });
     } catch (e) {
@@ -141,13 +192,16 @@
       throw e;
     }
     lastResult = result;
+    var tInfo = result.params.formStart || result.params.formEnd || result.params.orderStart || result.params.orderEnd
+      ? ' (已启用时间范围过滤)' : '';
     log('完成:有效 ' + result.stats.valid + '(进阶' + result.stats.validJJ + '/巅峰' + result.stats.validDF +
         '),无效 ' + result.stats.invalid + ',重复剔除 ' + result.stats.duplicates +
-        ';有效订单 强基' + result.validPools['强基'].stats.kept + '/升学' + result.validPools['升学'].stats.kept, 'ok');
+        ';有效订单 强基' + result.validPools['强基'].stats.kept + '/升学' + result.validPools['升学'].stats.kept + tInfo, 'ok');
     renderStats(result);
     renderImagePreview(result);
     renderDetail(result);
     renderInvalid(result);
+    renderComm(result);
     document.getElementById('results').style.display = 'block';
   }
 
@@ -219,6 +273,19 @@
     });
     rows.push('</table>');
     document.getElementById('previewInvalid').innerHTML = rows.join('');
+  }
+
+  function renderComm(r) {
+    var rows = ['<table class="grid"><tr><th>序号</th><th>奖池</th><th>姓名</th><th>基地</th><th>手机号</th><th>异常类型</th><th>处理话术</th><th>备注</th></tr>'];
+    r.communication.forEach(function (c, i) {
+      var name = c.real_name || c.nickname || '';
+      rows.push('<tr><td>' + (i + 1) + '</td><td>' + esc(c.pool) + '</td><td>' + esc(name) +
+        '</td><td>' + esc(c.base) + '</td><td>' + esc(c.phone) + '</td><td>' + esc(c.abnormal_type) +
+        '</td><td class="reason" style="text-align:left">' + esc(scriptFor(c)) +
+        '</td><td style="text-align:left">' + esc(c.reason || c.remark) + '</td></tr>');
+    });
+    rows.push('</table>');
+    document.getElementById('previewComm').innerHTML = rows.join('');
   }
 
   // ---------- Excel 导出 ----------
@@ -379,6 +446,24 @@
     return ws;
   }
 
+  // 异常名单沟通话术 sheet
+  function commSheet(comm) {
+    var rows = [['序号','奖池','姓名','基地','出单手机号','异常类型','处理话术','备注']];
+    comm.forEach(function (c, i) {
+      rows.push([i + 1, c.pool, c.real_name || c.nickname || '', c.base, c.phone,
+        c.abnormal_type, scriptFor(c), c.reason || c.remark]);
+    });
+    var ws = aoa(rows);
+    styleAll(ws, 8);
+    setColWidths(ws, [5, 8, 12, 10, 14, 16, 66, 40]);
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
+      if (c6) c6.s = sRed();
+    }
+    return ws;
+  }
+
   function downloadAll() {
     if (!lastResult) return;
     var r = lastResult;
@@ -399,6 +484,12 @@
       return wb;
     })(), '获奖名单（图片格式）.xlsx');
 
+    XLSX.writeFile((function () {
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常沟通话术');
+      return wb;
+    })(), '异常名单沟通话术.xlsx');
+
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheetFromRecords(r.validList.filter(function (s) { return s.pool === '进阶'; }), AUDIT_W), '进阶有效名单');
     XLSX.utils.book_append_sheet(wb, sheetFromRecords(r.validList.filter(function (s) { return s.pool === '巅峰'; }), AUDIT_W), '巅峰有效名单');
@@ -407,13 +498,54 @@
     XLSX.utils.book_append_sheet(wb, nameSheet(r.nameGhRows), '姓名工号对照');
     XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '基地姓名工号奖项奖品');
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
+    XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
     XLSX.writeFile(wb, '中奖名单审核结果.xlsx');
-    log('已导出 5 个 Excel 文件');
+    log('已导出 6 个 Excel 文件');
+  }
+
+  // ---------- 模板编辑区 ----------
+  function renderTemplates() {
+    var box = document.getElementById('tplList');
+    box.innerHTML = '';
+    templates.forEach(function (t, i) {
+      var div = document.createElement('div');
+      div.className = 'tpl-row';
+      div.innerHTML =
+        '<span class="tpl-name">' + esc(t.type) + '</span>' +
+        '<textarea data-i="' + i + '" rows="2" placeholder="处理话术模板…">' + esc(t.script) + '</textarea>' +
+        '<button type="button" class="tpl-del" data-i="' + i + '" title="删除此模板">✕</button>';
+      box.appendChild(div);
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('textarea'), function (ta) {
+      ta.addEventListener('input', function () {
+        templates[+ta.getAttribute('data-i')].script = ta.value;
+        saveTemplates();
+      });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('.tpl-del'), function (btn) {
+      btn.addEventListener('click', function () {
+        templates.splice(+btn.getAttribute('data-i'), 1);
+        saveTemplates();
+        renderTemplates();
+      });
+    });
+  }
+
+  function applyPeriodToTitles() {
+    var p = (document.getElementById('period').value || '').trim();
+    if (!p) return;
+    var rule = /\（[^（）]*\）/;
+    ['titleDF', 'titleJJ'].forEach(function (id) {
+      var el = document.getElementById(id);
+      var v = el.value.trim();
+      if (v && rule.test(v)) el.value = v.replace(rule, '（' + p + '）');
+    });
   }
 
   // ---------- 绑定 ----------
   document.addEventListener('DOMContentLoaded', function () {
     renderSlots();
+    renderTemplates();
     var zone = document.getElementById('dropzone');
     var input = document.getElementById('fileInput');
     input.addEventListener('change', function () { handleFiles(input.files); });
@@ -427,6 +559,12 @@
     zone.addEventListener('click', function () { input.click(); });
     document.getElementById('btnRun').addEventListener('click', run);
     document.getElementById('btnDownload').addEventListener('click', downloadAll);
+    document.getElementById('period').addEventListener('input', applyPeriodToTitles);
+    document.getElementById('btnResetTpl').addEventListener('click', function () {
+      templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
+      saveTemplates();
+      renderTemplates();
+    });
     ['titleDF', 'titleJJ'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', function () { if (lastResult) renderImagePreview(lastResult); });
     });
@@ -441,7 +579,9 @@
         Object.keys(files).forEach(function (k) { out[k] = files[k].name; });
         return out;
       },
-      getResult: function () { return lastResult; }
+      getResult: function () { return lastResult; },
+      getTemplates: function () { return templates; },
+      setTemplates: function (arr) { templates = arr; saveTemplates(); renderTemplates(); }
     };
   });
 })();

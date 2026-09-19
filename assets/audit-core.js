@@ -116,28 +116,66 @@
     return out;
   }
 
+  // ---------- 异常类型分类 ----------
+  // 依据无效原因/重复/备注,归类为可套用话术模板的异常类型
+  function classifyAbnormal(s) {
+    if (s.is_duplicate) return '重复抽奖';
+    var r = s.invalid_reasons || '';
+    if (r.indexOf('问卷提交时间') === 0 && r.indexOf('不在本期活动时间范围内') > 0) return '提交时间超范围';
+    if (r.indexOf('手机号格式不正确') >= 0) return '手机号格式错误';
+    if (r.indexOf('手机号在订单池中查找不到') >= 0) return '手机号未查到';
+    if (r.indexOf('未在有效订单池查找到') >= 0) return '订单未达有效条件';
+    if (r.indexOf('问卷头像与中奖名单无法匹配') >= 0) return '头像无法匹配';
+    if (r.indexOf('应属') >= 0 && r.indexOf('奖池抽奖') >= 0) return '抽错奖池';
+    if (s.abnormal_status) return '含退款/换课订单';
+    return '其他异常';
+  }
+
   // ---------- 主流程 ----------
   function audit(input) {
     var params = input.params || {};
     var PREFIX = params.channelPrefix || 'grow_xcg_zhuanjs_xiaoshou';
     var MIN_AMT = toFloat(params.minAmount != null ? params.minAmount : 999);
     var THRESHOLD = toFloat(params.threshold != null ? params.threshold : 20000);
+    // 可配置的时间范围(为空表示不限制)
+    var PERIOD = str(params.period);
+    var FORM_START = parseDt(params.formStart), FORM_END = parseDt(params.formEnd);      // 问卷提交时间范围
+    var ORDER_START = parseDt(params.orderStart), ORDER_END = parseDt(params.orderEnd);  // 订单支付时间范围
 
-    // 1) 过滤有效订单
+    function inRange(dt, start, end) {
+      if (!dt) return true;
+      if (start && dt < start) return false;
+      if (end && dt > end) return false;
+      return true;
+    }
+
+    // 1) 过滤有效订单(含支付时间范围)
     function filterPool(rows) {
       var title = rows[0] || [];
       var header = rows[1] || [];
-      var kept = [], rejCh = 0, rejAmt = 0;
-      for (var i = 2; i < rows.length; i++) {
+      // 动态查找表头行: 强基文件行0即表头(账号ID/真实姓名...),升学文件行1为表头
+      var start = 2;
+      for (var k = 0; k < Math.min(rows.length, 3); k++) {
+        var rr = rows[k] || [];
+        if (str(rr[0]) === '账号ID' || str(rr[1]) === '真实姓名') {
+          header = rr;
+          title = k > 0 ? (rows[k - 1] || []) : rows[0] || [];
+          start = k + 1;
+          break;
+        }
+      }
+      var kept = [], rejCh = 0, rejAmt = 0, rejTime = 0;
+      for (var i = start; i < rows.length; i++) {
         var r = rows[i];
         if (!r || !r[0]) continue;
         var ch = str(r[20]);
         var amt = toFloat(r[4]);
         if (ch.indexOf(PREFIX) !== 0) { rejCh++; continue; }
         if (amt < MIN_AMT) { rejAmt++; continue; }
+        if (!inRange(parseDt(r[5]), ORDER_START, ORDER_END)) { rejTime++; continue; }
         kept.push(r);
       }
-      return {title: title, header: header, kept: kept, rejChannel: rejCh, rejAmount: rejAmt, total: kept.length + rejCh + rejAmt};
+      return {title: title, header: header, kept: kept, rejChannel: rejCh, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejCh + rejAmt + rejTime};
     }
 
     var fQj = filterPool(input.rawOrders.qiangji || []);
@@ -322,6 +360,9 @@
     var validList = [], invalidList = [];
     submissions.forEach(function (s) {
       var reasons = [], remark = '';
+      if (!inRange(s.submit_dt, FORM_START, FORM_END)) {
+        reasons.push('问卷提交时间' + (s.submit_time_raw || '未知') + '不在本期活动时间范围内');
+      }
       if (!s.phone_format_ok) {
         reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
       } else if (!s.match) {
@@ -341,6 +382,7 @@
       if (s.abnormal_status) remark += '含' + s.abnormal_status + '订单，请核查';
       s.invalid_reasons = reasons.join('；');
       s.remark = remark;
+      s.abnormal_type = classifyAbnormal(s);
       if (s.is_duplicate) return;
       (reasons.length ? invalidList : validList).push(s);
     });
@@ -399,13 +441,30 @@
       return out;
     }
 
+    // 10) 异常沟通名单(无效+重复+含异常订单备注;供套用话术模板)
+    var communication = [];
+    function commBase(s) {
+      return {
+        pool: s.pool, nickname: s.nickname, real_name: s.real_name, base: s.base,
+        phone: s.phone, prize_name: s.prize_name, prize_level: s.prize_level,
+        submit_time: s.submit_time_raw, abnormal_type: s.abnormal_type,
+        reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
+        expected_pool: s.expected_pool
+      };
+    }
+    invalidList.forEach(function (s) { communication.push(commBase(s)); });
+    duplicates.forEach(function (s) { communication.push(commBase(s)); });
+    validList.forEach(function (s) { if (s.abnormal_status) communication.push(commBase(s)); });
+
     return {
-      params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD},
+      params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD,
+               period: PERIOD, formStart: FORM_START, formEnd: FORM_END,
+               orderStart: ORDER_START, orderEnd: ORDER_END},
       validPools: {
         '强基': {title: fQj.title, header: fQj.header, kept: fQj.kept,
-                 stats: {total: fQj.total, rejChannel: fQj.rejChannel, rejAmount: fQj.rejAmount, kept: fQj.kept.length}},
+                 stats: {total: fQj.total, rejChannel: fQj.rejChannel, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, kept: fQj.kept.length}},
         '升学': {title: fSx.title, header: fSx.header, kept: fSx.kept,
-                 stats: {total: fSx.total, rejChannel: fSx.rejChannel, rejAmount: fSx.rejAmount, kept: fSx.kept.length}}
+                 stats: {total: fSx.total, rejChannel: fSx.rejChannel, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, kept: fSx.kept.length}}
       },
       stats: {
         submitted: submissions.length,
@@ -420,6 +479,7 @@
       validList: validList,
       invalidList: invalidList,
       duplicates: duplicates,
+      communication: communication,
       nameGhRows: nameGhRows,
       ghStats: ghStats,
       groups: {'巅峰': tierGroups('巅峰', 4), '进阶': tierGroups('进阶', 8)}
