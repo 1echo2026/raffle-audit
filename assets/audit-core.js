@@ -122,6 +122,7 @@
     if (s.is_duplicate) return '重复抽奖';
     var r = s.invalid_reasons || '';
     if (r.indexOf('问卷提交时间') === 0 && r.indexOf('不在本期活动时间范围内') > 0) return '提交时间超范围';
+    if (r.indexOf('出单时间不符合当前抽奖日期') >= 0) return '出单时间不符合当前抽奖日期';
     if (r.indexOf('手机号格式不正确') >= 0) return '手机号格式错误';
     if (r.indexOf('手机号在订单池中查找不到') >= 0) return '手机号未查到';
     if (r.indexOf('非转介绍') >= 0) return '非转介绍';
@@ -380,18 +381,31 @@
         reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
       } else if (!s.match) {
         var mp = maskPhone(s.phone);
-        var inRaw = false, rawCh = '';
+        var rawRows = [];
         (input.rawOrders.qiangji || []).concat(input.rawOrders.shengxue || []).forEach(function (r) {
-          if (r && str(r[2]) === mp) { inRaw = true; rawCh = str(r[20]); }
+          if (r && str(r[2]) === mp) rawRows.push(r);
         });
-        if (inRaw && rawCh.indexOf('app_mingshitj') === 0) {
-          reasons.push('未在有效订单池查找到（订单归属渠道非转介绍渠道：' + rawCh + '，不属于转介绍出单）');
-        } else if (inRaw && rawCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
-          reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + rawCh + '，属于辅导leads接单）');
+        if (rawRows.length) {
+          // 业绩归属时间(订单支付时间)是否在本期活动时间范围内;未配置时间范围时不限制
+          var inWin = rawRows.some(function (r) { return inRange(parseDt(r[5]), ORDER_START, ORDER_END); });
+          if (!inWin && (ORDER_START || ORDER_END)) {
+            var t0 = rawRows.map(function (r) { return parseDt(r[5]); })
+                            .filter(function (d) { return !!d; }).sort(function (a, b) { return a - b; })[0];
+            s.order_time = t0 ? fmtDt(t0) : '';
+            reasons.push('出单时间不符合当前抽奖日期（订单池匹配到的业绩归属时间' +
+              (s.order_time || str(rawRows[0][5]) || '未知') + '不在本期活动时间范围内）');
+          } else {
+            var rawCh = str(rawRows[rawRows.length - 1][20]);
+            if (rawCh.indexOf('app_mingshitj') === 0) {
+              reasons.push('未在有效订单池查找到（订单归属渠道非转介绍渠道：' + rawCh + '，不属于转介绍出单）');
+            } else if (rawCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
+              reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + rawCh + '，属于辅导leads接单）');
+            } else {
+              reasons.push('未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）');
+            }
+          }
         } else {
-          reasons.push(inRaw
-            ? '未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）'
-            : '手机号在订单池中查找不到，疑似输入错误');
+          reasons.push('手机号在订单池中查找不到，疑似输入错误');
         }
       }
       if (!s.avatar_matched) reasons.push('问卷头像与中奖名单无法匹配');
