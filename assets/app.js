@@ -260,7 +260,7 @@
     return uniq.join('、');
   }
   function openDetailModal(title, rows) {
-    var h = ['<table class="grid"><tr>'];
+    var h = ['<table class="grid"><tr><th>序号</th>'];
     DETAIL_COLS.forEach(function (c) { h.push('<th>' + c + '</th>'); });
     h.push('</tr>');
     rows.forEach(function (x, i) {
