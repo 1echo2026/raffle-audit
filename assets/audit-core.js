@@ -1,13 +1,16 @@
 /*!
  * audit-core.js  中奖名单审核核心逻辑(纯 JS,无第三方依赖)
  * 与 Python 版 scripts/audit_winners.py + filter_orders.py 口径一致:
- *  1) 有效订单: 订单归属渠道前缀 grow_xcg_zhuanjs_xiaoshou 且 订单金额 >= 999
+ *  1) 匹配池: 全部渠道且订单金额 >= 999(渠道不再剔除,渠道差异在资格判定阶段归类异常)
+ *     有效订单(判池/工号累计/订单池导出): 仅渠道前缀 grow_xcg_zhuanjs_xiaoshou
  *  2) 头像匹配中奖名单 ↔ 问卷;加密手机号(前3位****后4位)匹配订单
  *  3) 一个手机号只保留提交时间最早的一次抽奖
  *  4) 按工号累计有效出单逐单判池:
  *     - 单笔订单金额 >= 2万:该订单直接归巅峰
  *     - 多手机号累计:跨2万的那笔及之后出单归巅峰,未满2万时归进阶
  *  5) 中奖手机号关联订单归哪个池,本次抽奖就必须在哪个池
+ *  6) 渠道异常归类: 匹配到的订单全部非销售直推渠道时,渠道前缀为
+ *     grow_xcg_zhuanjs_fudao 的按"非销售直推"处理,其它渠道按"非转介绍"处理
  */
 (function (global) {
   'use strict';
@@ -173,18 +176,17 @@
           break;
         }
       }
-      var kept = [], rejCh = 0, rejAmt = 0, rejTime = 0;
+      // 匹配池保留全部渠道(渠道差异在资格判定阶段归类为异常)
+      var kept = [], rejAmt = 0, rejTime = 0;
       for (var i = start; i < rows.length; i++) {
         var r = rows[i];
         if (!r || !r[0]) continue;
-        var ch = str(r[20]);
         var amt = toFloat(r[4]);
-        if (ch.indexOf(PREFIX) !== 0) { rejCh++; continue; }
         if (amt < MIN_AMT) { rejAmt++; continue; }
         if (!inRange(parseDt(r[5]), ORDER_START, ORDER_END)) { rejTime++; continue; }
         kept.push(r);
       }
-      return {title: title, header: header, kept: kept, rejChannel: rejCh, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejCh + rejAmt + rejTime};
+      return {title: title, header: header, kept: kept, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejAmt + rejTime};
     }
 
     var fQj = filterPool(input.rawOrders.qiangji || []);
@@ -203,23 +205,29 @@
         status: str(r[6]),
         product_id: str(r[10]),
         sales_name: str(r[24]),
-        gonghao: str(r[25])
+        gonghao: str(r[25]),
+        channel: str(r[20])
       };
     }
 
-    var validRows = [];
-    fQj.kept.forEach(function (r) { validRows.push(toRec(r, '强基')); });
-    fSx.kept.forEach(function (r) { validRows.push(toRec(r, '升学')); });
+    // 匹配池: 全部渠道(≥999),用于匹配中奖名单;渠道差异在资格判定阶段归类为异常
+    var allRows = [];
+    fQj.kept.forEach(function (r) { allRows.push(toRec(r, '强基')); });
+    fSx.kept.forEach(function (r) { allRows.push(toRec(r, '升学')); });
+    // 有效订单: 仅销售直推渠道(grow_xcg_zhuanjs_xiaoshou),用于判池与工号累计
+    function isXiaoshou(r) { return r.channel.indexOf(PREFIX) === 0; }
+    var validRows = allRows.filter(isXiaoshou);
 
     // (订单ID,商品ID) 去重,防两池重复导出
     var seenKey = {}, deduped = [];
-    validRows.forEach(function (r) {
+    allRows.forEach(function (r) {
       var k = r.order_id + '|' + r.product_id;
       if (seenKey[k]) return;
       seenKey[k] = 1;
       deduped.push(r);
     });
-    validRows = deduped;
+    allRows = deduped;
+    validRows = allRows.filter(isXiaoshou);
 
     // 2) 中奖名单 + 问卷
     var winners = {
@@ -286,9 +294,9 @@
       };
     });
 
-    // 4) 掩码 -> 有效订单行
+    // 4) 掩码 -> 匹配池订单行(全部渠道,≥999)
     var validIndex = {};
-    validRows.forEach(function (r) {
+    allRows.forEach(function (r) {
       if (!r.masked) return;
       (validIndex[r.masked] = validIndex[r.masked] || []).push(r);
     });
@@ -309,6 +317,16 @@
       rows.forEach(function (r) { acctSet[r.account] = 1; });
       if (!rows.length || Object.keys(acctSet).length > 1) return;
       s.match = 'ok';
+      // 渠道归类: 匹配到的订单全部非销售直推渠道时,记为渠道异常(非销售直推/非转介绍)
+      var xsRows = rows.filter(isXiaoshou);
+      if (!xsRows.length) {
+        s.channel_bad = {channel: rows[rows.length - 1].channel};
+        var tmax = null;
+        rows.forEach(function (r) { if (r.dt && (!tmax || r.dt > tmax)) tmax = r.dt; });
+        s.order_time = tmax ? fmtDt(tmax) : '';
+        return;
+      }
+      rows = xsRows;
       s.account = rows[0].account;
       var nv = {}, gv = {};
       rows.forEach(function (r) { inc(nv, r.sales_name); inc(gv, r.gonghao); });
@@ -355,7 +373,7 @@
       s.abnormal_status = Object.keys(ab).join('、');
     });
 
-    // 6) 一手机号一单去重
+    // 6) 一手机号一单去重(保留提交时间最早的一条)
     var groups = {};
     submissions.forEach(function (s, i) { if (s.phone_format_ok) (groups[s.phone] = groups[s.phone] || []).push(i); });
     var duplicates = [];
@@ -366,10 +384,20 @@
         var da = submissions[a].submit_dt, db = submissions[b].submit_dt;
         return (da ? da.getTime() : 8.64e15) - (db ? db.getTime() : 8.64e15);
       });
-      for (var k = 1; k < idxs.length; k++) {
-        submissions[idxs[k]].is_duplicate = true;
-        duplicates.push(submissions[idxs[k]]);
-      }
+      // 同一手机号在最早提交时刻有多条记录时(例如进阶全量表单与巅峰表单包含
+      // 完全相同的提交),优先保留巅峰奖池那条 —— 巅峰表单是该奖池的精确来源,
+      // 避免巅峰提交被进阶副本按数组顺序误判为重复而整池丢失。
+      var earliest = idxs[0];
+      var firstT = submissions[earliest].submit_dt ? submissions[earliest].submit_dt.getTime() : 8.64e15;
+      idxs.forEach(function (i) {
+        var t = submissions[i].submit_dt ? submissions[i].submit_dt.getTime() : 8.64e15;
+        if (t === firstT && submissions[i].pool === '巅峰' && submissions[earliest].pool !== '巅峰') earliest = i;
+      });
+      idxs.forEach(function (i) {
+        if (i === earliest) return;
+        submissions[i].is_duplicate = true;
+        duplicates.push(submissions[i]);
+      });
     });
     submissions.forEach(function (s) { s.is_duplicate = !!s.is_duplicate; });
 
@@ -382,6 +410,13 @@
       }
       if (!s.phone_format_ok) {
         reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
+      } else if (s.channel_bad) {
+        var cbCh = s.channel_bad.channel;
+        if (cbCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
+          reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + cbCh + '，属于辅导leads接单）');
+        } else {
+          reasons.push('未在有效订单池查找到（订单归属渠道非转介绍渠道：' + cbCh + '，不属于转介绍出单）');
+        }
       } else if (!s.match) {
         var mp = maskPhone(s.phone);
         var rawRows = [];
@@ -398,13 +433,14 @@
             reasons.push('出单时间不符合当前抽奖日期（订单池匹配到的业绩归属时间' +
               (s.order_time || str(rawRows[0][5]) || '未知') + '不在本期活动时间范围内）');
           } else {
-            var rawCh = str(rawRows[rawRows.length - 1][20]);
-            if (rawCh.indexOf('app_mingshitj') === 0) {
-              reasons.push('未在有效订单池查找到（订单归属渠道非转介绍渠道：' + rawCh + '，不属于转介绍出单）');
-            } else if (rawCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
-              reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + rawCh + '，属于辅导leads接单）');
+            // 手机号在原始订单池能找到但未进入匹配池(未达≥999):要么金额不足,要么匹配到多个账号
+            var hasQualified = rawRows.some(function (r) {
+              return toFloat(r[4]) >= MIN_AMT && inRange(parseDt(r[5]), ORDER_START, ORDER_END);
+            });
+            if (hasQualified) {
+              reasons.push('未在有效订单池查找到（手机号在订单池匹配到多个账号的达标订单，无法唯一归属）');
             } else {
-              reasons.push('未在有效订单池查找到（订单归属渠道非销售渠道或订单金额小于999元）');
+              reasons.push('未在有效订单池查找到（订单金额不足' + Math.round(MIN_AMT) + '元，未达活动有效条件）');
             }
           }
         } else {
@@ -412,7 +448,7 @@
         }
       }
       if (!s.avatar_matched) reasons.push('问卷头像与中奖名单无法匹配');
-      if (s.match && s.expected_pool && s.pool !== s.expected_pool) {
+      if (s.match && !s.channel_bad && s.expected_pool && s.pool !== s.expected_pool) {
         reasons.push(s.peak_reason + '，但本次在' + s.pool + '奖池抽奖');
       }
       if (s.abnormal_status) remark += '含' + s.abnormal_status + '订单，请核查';
@@ -508,15 +544,19 @@
     duplicates.forEach(function (s) { communication.push(commBase(s)); });
     validList.forEach(function (s) { if (s.abnormal_status) communication.push(commBase(s)); });
 
+    // 有效订单池导出仅保留销售直推渠道行
+    function xiaoKept(rows) { return rows.filter(function (r) { return str(r[20]).indexOf(PREFIX) === 0; }); }
+    var keptQj = xiaoKept(fQj.kept), keptSx = xiaoKept(fSx.kept);
+
     return {
       params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD,
                period: PERIOD, qishu: QISHU, formStart: FORM_START, formEnd: FORM_END,
                orderStart: ORDER_START, orderEnd: ORDER_END},
       validPools: {
-        '强基': {title: fQj.title, header: fQj.header, kept: fQj.kept,
-                 stats: {total: fQj.total, rejChannel: fQj.rejChannel, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, kept: fQj.kept.length}},
-        '升学': {title: fSx.title, header: fSx.header, kept: fSx.kept,
-                 stats: {total: fSx.total, rejChannel: fSx.rejChannel, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, kept: fSx.kept.length}}
+        '强基': {title: fQj.title, header: fQj.header, kept: keptQj,
+                 stats: {total: fQj.total, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, kept: keptQj.length}},
+        '升学': {title: fSx.title, header: fSx.header, kept: keptSx,
+                 stats: {total: fSx.total, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, kept: keptSx.length}}
       },
       stats: {
         submitted: submissions.length,

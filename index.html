@@ -71,11 +71,10 @@
       时间范围:填写后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),留空则不限制。修改"活动周期名称"会自动同步下方两个标题。
     </div>
 
-    <h3 class="tpl-title">📞 异常名单沟通话术模板(可编辑,自动保存在本机浏览器)</h3>
-    <div id="tplList" class="tpl-list"></div>
+    <h3 class="tpl-title">📞 异常名单沟通话术模板</h3>
     <div class="tpl-actions">
-      <button id="btnResetTpl" class="btn plain">↺ 恢复默认模板</button>
-      <span class="muted">话术中可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注} {期数} {周期} {出单时间} {单数} {提交时间}</span>
+      <a class="btn plain" href="templates.html">✏️ 编辑话术模板(独立页面)</a>
+      <span class="muted">话术自动保存在本机浏览器,可在独立页面修改。可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注} {期数} {周期} {出单时间} {单数} {提交时间}</span>
     </div>
 
     <button id="btnRun" class="btn primary">▶ 开始审核</button>
@@ -87,7 +86,7 @@
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
     <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(6 个文件)</button>
-    <p class="muted">包含:强基/升学有效订单池、中奖人员明细表(基地/姓名/工号/奖项/奖品)、获奖名单(图片格式·合并单元格粉头)、中奖名单审核结果总表(进阶有效/巅峰有效/无效名单/重复剔除/姓名工号对照)、异常名单沟通话术表</p>
+    <p class="muted">包含:强基/升学有效订单池、获奖名单(图片格式·合并单元格粉头)、中奖人员明细表(基地/姓名/工号/奖项/奖品)、异常名单、异常名单沟通话术表</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
@@ -108,6 +107,7 @@
 
 <script src="assets/xlsx.bundle.js"></script>
 <script src="assets/audit-core.js"></script>
+<script src="assets/templates-core.js"></script>
 <script src="assets/app.js"></script>
 <script>
 document.querySelectorAll('.tab').forEach(function (t) {

@@ -13,36 +13,8 @@
   var files = {};      // key -> {name, rows}
   var lastResult = null;
 
-  // ---------- 异常话术模板(可编辑,存 localStorage) ----------
-  var TPL_KEY = 'raffle_templates_v3';
-  var DEFAULT_TEMPLATES = [
-    {type: '重复抽奖', script: '{姓名}老师好，这边正在核对{期数}期{周期}的宠粉日抽奖，看到您用出单号码{手机号}抽了两次～咱们是一单只能参与一次的～所以只能算您抽奖时间早的那一次哦～辛苦老师下次注意啦'},
-    {type: '出单时间不符合当前抽奖日期', script: '{姓名}老师好，我们正在核对{期数}期{周期}宠粉日的抽奖活动，看到您使用{手机号}这个号码参与抽奖啦，但后台核实到老师这单是在{出单时间}出的哦，不能参与咱们第{期数}期{周期}的抽奖哈~老师后续出单要及时在群里晒单参与当期的抽奖哦，周三晚上出单的也可以晒单在群里这边会帮老师您登记上的哦~'},
-    {type: '提交时间超范围', script: '您好，您在{提交时间}提交的抽奖问卷不在本期活动时间范围内，无法参与本次抽奖，感谢您的参与！'},
-    {type: '手机号格式错误', script: '您好，您在问卷中填写的出单手机号 {手机号} 格式有误，在订单池中无法查询到对应出单记录，疑似填写错误。请核对后重新提交，谢谢！'},
-    {type: '手机号未查到', script: '{姓名}老师好，小助手这边正在核对{期数}期的宠粉活动，看到您用{手机号}这个号码参与了抽奖～后台核查查不到信息，跟您这边核实一下情况~'},
-    {type: '订单未达有效条件', script: '您好，您填写的出单手机号 {手机号} 对应的订单未满足本期活动有效条件（订单归属渠道非销售渠道或订单金额不足999元），无法参与本次抽奖，感谢您的参与！'},
-    {type: '非转介绍', script: '{姓名}老师好～小助手这边正在核对{期数}期{周期}的宠粉活动，看到您用{手机号}这个号码参与了抽奖～后台核查到这一单好像不是转介绍~跟您这边核实一下情况~如果已经在邮件报备辛苦老师发一下证明材料~'},
-    {type: '非销售直推', script: '{姓名}老师好，我们这边正在核对{期数}期{周期}宠粉日抽奖~后台看到您参与抽奖的这单{手机号}，是接辅导leads~这单是不能参与抽奖的呢。宠粉日的规则是仅限销售直推抽奖~老师下次出销售直推的单子就可以抽啦'},
-    {type: '头像无法匹配', script: '您好，您在问卷中填写的头像与本期中奖名单无法匹配，请提供中奖名单中对应的头像截图以便核实，谢谢配合！'},
-    {type: '抽错奖池（应属巅峰）', script: '{姓名}老师好～ 我们正在核对宠粉日{期数}期{周期}抽奖~看到{手机号}截止在目前这单您累计出单累计金额已经超过2万，但是看您还是继续在进阶奖池抽的奖，我们的规则是当周累计出单金额≥2 万元后，本周期内的这一单以及后续新增的几单都是可以在巅峰奖池抽奖的，您现在去巅峰奖池再抽{单数}单即可~老师之后您累计出单金额大于2万了也可以跟咱们小助手说一下喔~'},
-    {type: '抽错奖池（应属进阶）', script: '{姓名}老师好~我们正在核对宠粉日{期数}期{周期}抽奖~看到您{手机号}这一单在巅峰奖池抽的奖，但是经核算这一单出单累计金额还没有超过2万，我们的规则是当周累计出单金额≥2 万元后，本周期内的这一单以及后续新增出单才可以在巅峰奖池抽奖呢~老师多多加油，下次一定可以去巅峰奖池抽奖的~然后您现在再去进阶奖池抽1单~'},
-    {type: '含退款/换课订单', script: '您好，您关联的出单订单存在退款/换课情况，按活动规则需进一步核查订单状态，请留意后续通知，谢谢配合！'},
-    {type: '其他异常', script: '您好，您的抽奖记录存在异常情况，需人工进一步核查，请留意后续通知，谢谢配合！'}
-  ];
-  var templates = loadTemplates();
-
-  function loadTemplates() {
-    try {
-      var raw = localStorage.getItem(TPL_KEY);
-      if (raw) {
-        var arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length) return arr;
-      }
-    } catch (e) { /* ignore */ }
-    return JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
-  }
-  function saveTemplates() { try { localStorage.setItem(TPL_KEY, JSON.stringify(templates)); } catch (e) { /* ignore */ } }
+  // ---------- 异常话术模板(独立页面维护,存 localStorage;常量与读写见 templates-core.js) ----------
+  var templates = (window.TplCore ? TplCore.load() : []);
 
   function fillScript(tpl, c) {
     var name = c.real_name || c.nickname || '';
@@ -511,6 +483,24 @@
     return ws;
   }
 
+  // 异常名单 sheet:无效 + 重复 + 含退款/换课订单,异常类型列红色
+  function abnormalSheet(comm) {
+    var rows = [['序号','奖池','姓名','基地','出单手机号','奖品','异常类型','原因','备注']];
+    comm.forEach(function (c, i) {
+      rows.push([i + 1, c.pool, c.real_name || c.nickname || '', c.base, c.phone,
+        c.prize_name, c.abnormal_type, c.reason || c.remark, c.remark]);
+    });
+    var ws = aoa(rows);
+    styleAll(ws, 9);
+    setColWidths(ws, [5, 8, 12, 10, 14, 26, 16, 56, 24]);
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
+      if (c6) c6.s = sRed();
+    }
+    return ws;
+  }
+
   function downloadAll() {
     if (!lastResult) return;
     var r = lastResult;
@@ -519,43 +509,17 @@
     downloadValidPool('强基', r.validPools['强基']);
     downloadValidPool('升学', r.validPools['升学']);
 
-    // 最终产物: 1 个 Excel,3 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单沟通话术)
+    // 最终产物: 1 个 Excel,4 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单 / 异常名单沟通话术)
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
     XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖人员明细表');
+    XLSX.utils.book_append_sheet(wb, abnormalSheet(r.communication), '异常名单');
     XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
     XLSX.writeFile(wb, '中奖名单审核结果.xlsx');
-    log('已导出: 中奖名单审核结果.xlsx(含 获奖名单(图片格式) / 中奖人员明细表 / 异常名单沟通话术 3 个子表) + 强基/升学有效订单池');
+    log('已导出: 中奖名单审核结果.xlsx(含 获奖名单(图片格式) / 中奖人员明细表 / 异常名单 / 异常名单沟通话术 4 个子表) + 强基/升学有效订单池');
   }
 
-  // ---------- 模板编辑区 ----------
-  function renderTemplates() {
-    var box = document.getElementById('tplList');
-    box.innerHTML = '';
-    templates.forEach(function (t, i) {
-      var div = document.createElement('div');
-      div.className = 'tpl-row';
-      div.innerHTML =
-        '<span class="tpl-name">' + esc(t.type) + '</span>' +
-        '<textarea data-i="' + i + '" rows="2" placeholder="处理话术模板…">' + esc(t.script) + '</textarea>' +
-        '<button type="button" class="tpl-del" data-i="' + i + '" title="删除此模板">✕</button>';
-      box.appendChild(div);
-    });
-    Array.prototype.forEach.call(box.querySelectorAll('textarea'), function (ta) {
-      ta.addEventListener('input', function () {
-        templates[+ta.getAttribute('data-i')].script = ta.value;
-        saveTemplates();
-      });
-    });
-    Array.prototype.forEach.call(box.querySelectorAll('.tpl-del'), function (btn) {
-      btn.addEventListener('click', function () {
-        templates.splice(+btn.getAttribute('data-i'), 1);
-        saveTemplates();
-        renderTemplates();
-      });
-    });
-  }
-
+  // ---------- 应用周期到标题 ----------
   function applyPeriodToTitles() {
     var p = (document.getElementById('period').value || '').trim();
     if (!p) return;
@@ -570,7 +534,6 @@
   // ---------- 绑定 ----------
   document.addEventListener('DOMContentLoaded', function () {
     renderSlots();
-    renderTemplates();
     var zone = document.getElementById('dropzone');
     var input = document.getElementById('fileInput');
     input.addEventListener('change', function () { handleFiles(input.files); });
@@ -585,11 +548,6 @@
     document.getElementById('btnRun').addEventListener('click', run);
     document.getElementById('btnDownload').addEventListener('click', downloadAll);
     document.getElementById('period').addEventListener('input', applyPeriodToTitles);
-    document.getElementById('btnResetTpl').addEventListener('click', function () {
-      templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
-      saveTemplates();
-      renderTemplates();
-    });
     ['titleDF', 'titleJJ'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', function () { if (lastResult) renderImagePreview(lastResult); });
     });
@@ -606,7 +564,7 @@
       },
       getResult: function () { return lastResult; },
       getTemplates: function () { return templates; },
-      setTemplates: function (arr) { templates = arr; saveTemplates(); renderTemplates(); }
+      setTemplates: function (arr) { templates = arr; if (window.TplCore) TplCore.save(templates); }
     };
   });
 })();

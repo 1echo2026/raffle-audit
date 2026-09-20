@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>话术模板管理 · 中奖名单审核工具</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .tpl-row .tpl-name { width: 150px; box-sizing: border-box; }
+  .tpl-row textarea { min-height: 80px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <h1>✏️ 异常名单沟通话术模板管理</h1>
+    <p class="sub">修改后自动保存在本机浏览器(localStorage,key: raffle_templates_v3),审核主页自动读取。可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注} {期数} {周期} {出单时间} {单数} {提交时间}</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card-panel">
+    <h2><span class="step">1</span> 编辑话术模板</h2>
+    <div id="tplList" class="tpl-list"></div>
+    <div class="tpl-actions">
+      <button id="btnAddTpl" class="btn plain">＋ 新增模板</button>
+      <button id="btnResetTpl" class="btn plain">↺ 恢复默认模板</button>
+    </div>
+  </section>
+
+  <div class="tpl-actions">
+    <a class="btn primary" href="index.html">← 返回审核主页</a>
+  </div>
+
+  <footer class="foot muted">纯静态页面 · 修改自动保存到本机浏览器</footer>
+</main>
+
+<script src="assets/templates-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  var list = document.getElementById('tplList');
+  var templates = (window.TplCore ? TplCore.load() : []);
+  function persist() { if (window.TplCore) TplCore.save(templates); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
+    });
+  }
+  function render() {
+    list.innerHTML = '';
+    templates.forEach(function (t, i) {
+      var row = document.createElement('div');
+      row.className = 'tpl-row';
+      row.innerHTML =
+        '<input class="tpl-name" value="' + esc(t.type) + '">' +
+        '<textarea rows="3"></textarea>' +
+        '<button class="tpl-del" title="删除该模板">✕</button>';
+      var nameInput = row.querySelector('.tpl-name');
+      var ta = row.querySelector('textarea');
+      ta.value = t.script || '';
+      nameInput.onchange = function () { t.type = nameInput.value; persist(); };
+      ta.oninput = function () { t.script = ta.value; persist(); };
+      row.querySelector('.tpl-del').onclick = function () { templates.splice(i, 1); persist(); render(); };
+      list.appendChild(row);
+    });
+  }
+  document.getElementById('btnAddTpl').onclick = function () {
+    templates.push({type: '新模板', script: ''});
+    persist();
+    render();
+  };
+  document.getElementById('btnResetTpl').onclick = function () {
+    if (!confirm('确定恢复默认模板吗?当前所有修改将被覆盖。')) return;
+    templates = JSON.parse(JSON.stringify(TplCore.DEFAULT_TEMPLATES));
+    persist();
+    render();
+  };
+  render();
+})();
+</script>
+</body>
+</html>
