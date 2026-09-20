@@ -202,6 +202,8 @@
         amount: toFloat(r[4]),
         pay_time: str(r[5]),
         dt: parseDt(r[5]),
+        perf_time: str(r[7]),
+        perf_dt: parseDt(r[7]),
         status: str(r[6]),
         product_id: str(r[10]),
         sales_name: str(r[24]),
@@ -347,7 +349,9 @@
       }
       s.order_time = '';
       rows.forEach(function (r) {
-        if (r.dt && (!s.order_time || r.dt > s.order_time)) s.order_time = r.dt;
+        // 业绩归属时间取订单池"业绩归属时间"列(c7);无该列时回退支付时间(c5)
+        var t = r.perf_dt || r.dt;
+        if (t && (!s.order_time || t > s.order_time)) s.order_time = t;
       });
       s.order_time = s.order_time ? fmtDt(s.order_time) : '';
       var oidMap = {}, relInfos = [];

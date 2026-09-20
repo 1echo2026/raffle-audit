@@ -234,6 +234,31 @@
     var lv = levelText(s);
     return (lv && lv !== '奖品' ? lv + ' ' : '') + (s.prize_name || '');
   }
+  // 业绩归属渠道去掉订单池渠道单元格的 &&null&&null 脏后缀
+  function cleanChannel(c) { return (c || '').split('&&')[0]; }
+  // 问卷奖品查询:在进阶/巅峰两个奖池问卷(全部提交记录)中,按掩码手机号/真实姓名查找客户所中奖品
+  function buildPrizeLookup() {
+    var r = lastResult;
+    var byPhone = {}, byName = {};
+    function add(s) {
+      var lbl = prizeLabel(s);
+      if (!lbl) return;
+      var p = s.phone ? AuditCore.maskPhone(s.phone) : '';
+      if (p) (byPhone[p] = byPhone[p] || []).push(lbl);
+      var nm = s.real_name || '';
+      if (nm) (byName[nm] = byName[nm] || []).push(lbl);
+    }
+    (r.validList || []).forEach(add);
+    (r.invalidList || []).forEach(add);
+    (r.duplicates || []).forEach(add);
+    return {byPhone: byPhone, byName: byName};
+  }
+  function lookupPrize(lu, maskedPhone, name) {
+    var arr = (maskedPhone && lu.byPhone[maskedPhone]) || (name && lu.byName[name]) || [];
+    var seen = {}, uniq = [];
+    arr.forEach(function (p) { if (!seen[p]) { seen[p] = 1; uniq.push(p); } });
+    return uniq.join('、');
+  }
   function openDetailModal(title, rows) {
     var h = ['<table class="grid"><tr>'];
     DETAIL_COLS.forEach(function (c) { h.push('<th>' + c + '</th>'); });
@@ -264,7 +289,7 @@
   function showPoolDetail(pool) {
     var r = lastResult;
     var rows = r.validList.filter(function (s) { return s.pool === pool; }).map(function (s) {
-      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), cleanChannel(s.channel) || '—',
               s.order_time || '—', AuditCore.fmtMoney(s.total_amount), s.remark || ''];
     });
     openDetailModal(pool + '奖池 有效中奖人（' + rows.length + ' 人）', rows);
@@ -274,7 +299,7 @@
   function showInvalidDetail() {
     var r = lastResult;
     var rows = r.invalidList.map(function (s) {
-      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), cleanChannel(s.channel) || '—',
               s.order_time || '—', AuditCore.fmtMoney(s.total_amount), s.invalid_reasons || ''];
     });
     openDetailModal('无效名单（' + rows.length + ' 人）', rows);
@@ -284,7 +309,7 @@
   function showDupDetail() {
     var r = lastResult;
     var rows = r.duplicates.map(function (s) {
-      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), cleanChannel(s.channel) || '—',
               s.order_time || '—', AuditCore.fmtMoney(s.total_amount),
               '同手机号多抽，已剔除（保留最早提交）' + (s.invalid_reasons ? '；' + s.invalid_reasons : '')];
     });
@@ -292,13 +317,26 @@
   }
 
   // 有效订单池明细(强基/升学)
+  // 订单池列: c1=真实姓名 c4=订单金额 c5=支付时间 c7=业绩归属时间 c20=订单归属渠道 c25=工号 c26=组织架构(含城市)
+  var BASE_CITIES = ['北京','武汉','成都','西安','合肥','新乡','郑州'];
+  function baseFromOrg(org) {
+    var s = String(org || '');
+    for (var i = 0; i < BASE_CITIES.length; i++) {
+      if (s.indexOf(BASE_CITIES[i]) >= 0) return BASE_CITIES[i];
+    }
+    return '';
+  }
   function showPoolOrder(poolName) {
     var r = lastResult;
     var pool = r.validPools[poolName];
+    var lu = buildPrizeLookup();
     var rows = pool.kept.map(function (rr) {
+      // 奖品在进阶/巅峰两个奖池问卷中按掩码手机号(优先)/真实姓名查找
+      var masked = AuditCore.maskPhone(String(rr[2] || '').trim());
+      var prize = lookupPrize(lu, masked, String(rr[1] || '').trim());
       // 列序: 基地/姓名/工号/奖品/业绩归属渠道/业绩归属时间/订单转化金额/异常情况说明
-      return ['', rr[1] || '', rr[25] || '', '', rr[20] || '',
-              rr[5] || '', AuditCore.fmtMoney(rr[4]), ''];
+      return [baseFromOrg(rr[26]), rr[1] || '', rr[25] || '', prize, cleanChannel(rr[20]),
+              rr[7] || rr[5] || '', AuditCore.fmtMoney(rr[4]), ''];
     });
     openDetailModal(poolName + '有效订单池（' + rows.length + ' 条，仅销售直推渠道）', rows);
   }
