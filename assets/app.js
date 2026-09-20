@@ -249,8 +249,14 @@
   function renderImagePreview(r) {
     var t1 = document.getElementById('titleDF').value.trim() || '巅峰奖池获奖名单';
     var t2 = document.getElementById('titleJJ').value.trim() || '进阶奖池获奖名单';
+    var strip =
+      '<div class="img-stats">' +
+      '重复剔除 <b>' + r.stats.duplicates + '</b> 人 · ' +
+      '强基有效订单 <b>' + r.validPools['强基'].stats.kept + '</b> · ' +
+      '升学有效订单 <b>' + r.validPools['升学'].stats.kept + '</b>' +
+      '</div>';
     document.getElementById('previewImage').innerHTML =
-      sectionTable(t1, r.groups['巅峰']) + sectionTable(t2, r.groups['进阶']);
+      strip + sectionTable(t1, r.groups['巅峰']) + sectionTable(t2, r.groups['进阶']);
   }
 
   function renderDetail(r) {

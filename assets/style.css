@@ -148,6 +148,14 @@ body {
 .winner-table th:nth-child(3), .winner-table th:nth-child(4) { width: 90px; }
 #previewImage { overflow-x: auto; padding: 6px; }
 
+/* 获奖名单上方的统计条(重复剔除/强基/升学有效订单) */
+.img-stats {
+  width: 560px; margin: 0 auto 16px; text-align: center;
+  background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px;
+  padding: 8px 14px; font-size: 13.5px; color: #595959; line-height: 1.8;
+}
+.img-stats b { color: var(--red); font-size: 15px; }
+
 /* 普通网格表 */
 .grid { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .grid th, .grid td { border: 1px solid #d9d9d9; padding: 5px 8px; text-align: center; vertical-align: middle; }
