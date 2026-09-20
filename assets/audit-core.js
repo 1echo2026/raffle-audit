@@ -310,7 +310,7 @@
       s.match = null;
       s.total_amount = 0; s.order_count = 0; s.max_single_order = 0;
       s.peak_since = null; s.expected_pool = ''; s.peak_reason = '';
-      s.account = ''; s.sales_name = ''; s.gonghao = ''; s.abnormal_status = '';
+      s.account = ''; s.sales_name = ''; s.gonghao = ''; s.abnormal_status = ''; s.channel = '';
       if (!s.phone_format_ok) return;
       var rows = validIndex[maskPhone(s.phone)] || [];
       var acctSet = {};
@@ -321,6 +321,7 @@
       var xsRows = rows.filter(isXiaoshou);
       if (!xsRows.length) {
         s.channel_bad = {channel: rows[rows.length - 1].channel};
+        s.channel = s.channel_bad.channel;
         var tmax = null;
         rows.forEach(function (r) { if (r.dt && (!tmax || r.dt > tmax)) tmax = r.dt; });
         s.order_time = tmax ? fmtDt(tmax) : '';
@@ -328,6 +329,10 @@
       }
       rows = xsRows;
       s.account = rows[0].account;
+      // 业绩归属渠道(匹配到的有效订单渠道,去重合并)
+      var chSet = {};
+      rows.forEach(function (r) { if (r.channel) chSet[r.channel] = 1; });
+      s.channel = Object.keys(chSet).join('、');
       var nv = {}, gv = {};
       rows.forEach(function (r) { inc(nv, r.sales_name); inc(gv, r.gonghao); });
       s.sales_name = Object.keys(nv).sort(function (a, b) { return nv[b] - nv[a]; })[0] || '';

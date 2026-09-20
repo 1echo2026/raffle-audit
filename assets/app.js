@@ -214,16 +214,93 @@
 
   function renderStats(r) {
     var html = '' +
-      card('进阶有效', r.stats.validJJ, 'var(--blue)') +
-      card('巅峰有效', r.stats.validDF, 'var(--gold)') +
-      card('无效名单', r.stats.invalid, 'var(--red)') +
-      card('重复剔除', r.stats.duplicates, 'var(--gray)') +
-      card('强基有效订单', r.validPools['强基'].stats.kept, 'var(--green)') +
-      card('升学有效订单', r.validPools['升学'].stats.kept, 'var(--green)');
+      card('进阶有效', r.stats.validJJ, 'var(--blue)', 'showPoolDetail', '进阶') +
+      card('巅峰有效', r.stats.validDF, 'var(--gold)', 'showPoolDetail', '巅峰') +
+      card('无效名单', r.stats.invalid, 'var(--red)', 'showInvalidDetail', '') +
+      card('重复剔除', r.stats.duplicates, 'var(--gray)', 'showDupDetail', '') +
+      card('强基有效订单', r.validPools['强基'].stats.kept, 'var(--green)', 'showPoolOrder', '强基') +
+      card('升学有效订单', r.validPools['升学'].stats.kept, 'var(--green)', 'showPoolOrder', '升学');
     document.getElementById('stats').innerHTML = html;
   }
-  function card(t, n, c) {
-    return '<div class="card"><div class="card-n" style="color:' + c + '">' + n + '</div><div class="card-t">' + t + '</div></div>';
+  function card(t, n, c, fn, arg) {
+    return '<div class="card clickable" onclick="' + fn + '(\'' + arg + '\')"><div class="card-n" style="color:' + c + '">' + n + '</div><div class="card-t">' + t + '</div></div>';
+  }
+
+  // ---------- 统计数字详情弹窗(点击卡片数字弹出,统一列) ----------
+  var DETAIL_COLS = ['基地','姓名','工号','奖品奖项与奖品名称','业绩归属渠道','业绩归属时间','订单转化金额','异常情况说明（如有）'];
+
+  function escDetail(v) { return esc(v == null || v === '' ? '—' : v); }
+  function prizeLabel(s) {
+    var lv = levelText(s);
+    return (lv && lv !== '奖品' ? lv + ' ' : '') + (s.prize_name || '');
+  }
+  function openDetailModal(title, rows) {
+    var h = ['<table class="grid"><tr>'];
+    DETAIL_COLS.forEach(function (c) { h.push('<th>' + c + '</th>'); });
+    h.push('</tr>');
+    rows.forEach(function (x, i) {
+      h.push('<tr><td style="text-align:left">' + (i + 1) + '</td>');
+      DETAIL_COLS.forEach(function (c, j) {
+        h.push('<td style="text-align:left">' + escDetail(x[j]) + '</td>');
+      });
+      h.push('</tr>');
+    });
+    h.push('</table>');
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = h.join('');
+    document.getElementById('detailModal').style.display = 'flex';
+  }
+  function closeDetailModal() {
+    document.getElementById('detailModal').style.display = 'none';
+  }
+
+  // 弹窗函数供卡片 inline onclick 调用
+  window.showPoolDetail = showPoolDetail;
+  window.showInvalidDetail = showInvalidDetail;
+  window.showDupDetail = showDupDetail;
+  window.showPoolOrder = showPoolOrder;
+
+  // 奖池有效中奖人(进阶/巅峰): 已匹配且无异常原因
+  function showPoolDetail(pool) {
+    var r = lastResult;
+    var rows = r.validList.filter(function (s) { return s.pool === pool; }).map(function (s) {
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+              s.order_time || '—', AuditCore.fmtMoney(s.total_amount), s.remark || ''];
+    });
+    openDetailModal(pool + '奖池 有效中奖人（' + rows.length + ' 人）', rows);
+  }
+
+  // 无效名单
+  function showInvalidDetail() {
+    var r = lastResult;
+    var rows = r.invalidList.map(function (s) {
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+              s.order_time || '—', AuditCore.fmtMoney(s.total_amount), s.invalid_reasons || ''];
+    });
+    openDetailModal('无效名单（' + rows.length + ' 人）', rows);
+  }
+
+  // 重复剔除
+  function showDupDetail() {
+    var r = lastResult;
+    var rows = r.duplicates.map(function (s) {
+      return [s.base, s.real_name || s.nickname, s.gonghao, prizeLabel(s), s.channel || '—',
+              s.order_time || '—', AuditCore.fmtMoney(s.total_amount),
+              '同手机号多抽，已剔除（保留最早提交）' + (s.invalid_reasons ? '；' + s.invalid_reasons : '')];
+    });
+    openDetailModal('重复剔除（' + rows.length + ' 人）', rows);
+  }
+
+  // 有效订单池明细(强基/升学)
+  function showPoolOrder(poolName) {
+    var r = lastResult;
+    var pool = r.validPools[poolName];
+    var rows = pool.kept.map(function (rr) {
+      // 列序: 基地/姓名/工号/奖品/业绩归属渠道/业绩归属时间/订单转化金额/异常情况说明
+      return ['', rr[1] || '', rr[25] || '', '', rr[20] || '',
+              rr[5] || '', AuditCore.fmtMoney(rr[4]), ''];
+    });
+    openDetailModal(poolName + '有效订单池（' + rows.length + ' 条，仅销售直推渠道）', rows);
   }
 
   // ---------- 图片格式预览 ----------
@@ -249,14 +326,8 @@
   function renderImagePreview(r) {
     var t1 = document.getElementById('titleDF').value.trim() || '巅峰奖池获奖名单';
     var t2 = document.getElementById('titleJJ').value.trim() || '进阶奖池获奖名单';
-    var strip =
-      '<div class="img-stats">' +
-      '重复剔除 <b>' + r.stats.duplicates + '</b> 人 · ' +
-      '强基有效订单 <b>' + r.validPools['强基'].stats.kept + '</b> · ' +
-      '升学有效订单 <b>' + r.validPools['升学'].stats.kept + '</b>' +
-      '</div>';
     document.getElementById('previewImage').innerHTML =
-      strip + sectionTable(t1, r.groups['巅峰']) + sectionTable(t2, r.groups['进阶']);
+      sectionTable(t1, r.groups['巅峰']) + sectionTable(t2, r.groups['进阶']);
   }
 
   function renderDetail(r) {
@@ -553,6 +624,12 @@
     zone.addEventListener('click', function () { input.click(); });
     document.getElementById('btnRun').addEventListener('click', run);
     document.getElementById('btnDownload').addEventListener('click', downloadAll);
+    // 详情弹窗:关闭按钮 + 点击遮罩关闭
+    document.getElementById('modalClose').addEventListener('click', closeDetailModal);
+    document.getElementById('detailModal').addEventListener('click', function (e) {
+      if (e.target === this) closeDetailModal();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetailModal(); });
     document.getElementById('period').addEventListener('input', applyPeriodToTitles);
     ['titleDF', 'titleJJ'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', function () { if (lastResult) renderImagePreview(lastResult); });
