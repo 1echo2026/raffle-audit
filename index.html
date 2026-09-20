@@ -10,7 +10,7 @@
 <header class="topbar">
   <div class="wrap">
     <h1>🎁 中奖名单审核工具</h1>
-    <p class="sub">上传 6 个 Excel → 自动过滤有效订单 · 头像/加密手机号匹配 · 按工号累计逐单判定进阶/巅峰奖池 → 一键导出结果。全部在浏览器本地计算,文件不会上传服务器。</p>
+    <p class="sub">上传 4 个 Excel → 自动过滤有效订单 · 头像/加密手机号匹配 · 按工号累计逐单判定进阶/巅峰奖池 → 一键导出结果。全部在浏览器本地计算,文件不会上传服务器。</p>
   </div>
 </header>
 
@@ -18,11 +18,11 @@
 
   <!-- 第 1 步:上传 -->
   <section class="card-panel">
-    <h2><span class="step">1</span> 上传文件(6 个 .xlsx,可一次全选拖入,自动识别)</h2>
+    <h2><span class="step">1</span> 上传文件(4 个 .xlsx,可一次全选拖入,自动识别)</h2>
     <div id="dropzone" class="dropzone">
       <div class="dz-icon">📂</div>
-      <div>点击选择或把 6 个 Excel 拖到这里</div>
-      <div class="muted">2 个原始订单池 + 进阶/巅峰中奖名单(奖品发放表) + 进阶/巅峰问卷(表单)</div>
+      <div>点击选择或把 4 个 Excel 拖到这里</div>
+      <div class="muted">强基订单池 + 升学订单池 + 进阶奖池问卷 + 巅峰奖池问卷(问卷文件需同时含"表单填写"与"发放情况"两个 sheet)</div>
       <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none">
     </div>
     <div id="slots" class="slots"></div>
@@ -85,7 +85,7 @@
   <section id="results" class="card-panel" style="display:none">
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
-    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(6 个文件)</button>
+    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(3 个文件)</button>
     <p class="muted">包含:强基/升学有效订单池、获奖名单(图片格式·合并单元格粉头)、中奖人员明细表(基地/姓名/工号/奖项/奖品)、异常名单、异常名单沟通话术表</p>
 
     <div class="tabs">
