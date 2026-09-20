@@ -65,12 +65,13 @@
   function fmtPeak(d) { return d ? AuditCore.fmtDt(d instanceof Date ? d : AuditCore.parseDt(d)) : '未达标'; }
 
   // ---------- 读取 / 识别 ----------
-  // 一个文件可产出多个角色(问卷文件同时含"表单填写"与"发放情况"两个 sheet):
+  // 一个文件识别为一个角色(4 文件流程: 2 订单池 + 2 问卷):
   //  订单池文件 → qjRaw / sxRaw
-  //  问卷文件 → jjForm|dfForm(表单填写) + jjDist|dfDist(发放情况/中奖名单)
+  //  问卷文件 → jjForm / dfForm(取"表单填写"表;发放情况表不再需要,问卷表单已含基地/姓名/手机号等审核所需信息)
   function classifySheets(sheets, name) {
     var out = {};
     var orderRows = null;
+    var distFound = false;
     sheets.forEach(function (sh) {
       var hh = [];
       (sh.rows[0] || []).concat(sh.rows[1] || []).forEach(function (x) { hh.push(String(x || '').trim()); });
@@ -83,7 +84,7 @@
         out[name.indexOf('巅峰') >= 0 ? 'dfForm' : 'jjForm'] = sh.rows;
       } else if (j.indexOf('奖项名称') >= 0 || j.indexOf('中奖者昵称') >= 0 ||
                  /[一二三四五六七八九十]等奖[：:、\s].*?×/.test(j)) {
-        out[name.indexOf('巅峰') >= 0 ? 'dfDist' : 'jjDist'] = sh.rows;
+        distFound = true;
       }
     });
     if (orderRows) {
@@ -91,7 +92,7 @@
       else if (name.indexOf('升学') >= 0) out.sxRaw = orderRows;
       else out[(orderRows[0] || []).length > 20 ? 'sxRaw' : 'qjRaw'] = orderRows;
     }
-    return out;
+    return {roles: out, distFound: distFound};
   }
 
   async function readFile(file) {
@@ -112,7 +113,13 @@
       if (!/\.xlsx?$/i.test(f.name)) continue;
       try {
         var sheets = await readFile(f);
-        var roles = classifySheets(sheets, f.name);
+        var res = classifySheets(sheets, f.name);
+        var roles = res.roles;
+        if (!Object.keys(roles).length) {
+          log('未识别: ' + f.name + ' — ' + (res.distFound
+            ? '只找到"发放情况"表(4 文件流程不需要该表),未找到"表单填写"表'
+            : '未找到"表单填写"表(需含"用户昵称"表头)或订单池表(需含"账号ID/订单ID"表头)'), 'err');
+        }
         Object.keys(roles).forEach(function (k) { files[k] = {name: f.name, rows: roles[k]}; });
       } catch (e) {
         log('读取失败: ' + f.name + ' — ' + e.message, 'err');
@@ -144,16 +151,8 @@
       sel.onchange = function () {
         var from = sel.getAttribute('data-file'), to = sel.value;
         if (!to || !files[from]) return;
-        // 问卷文件在进阶↔巅峰之间移动时,连带其"发放情况"(中奖名单)sheet 一起移动
-        var pair = {jjForm: ['jjDist', 'dfForm', 'dfDist'], dfForm: ['dfDist', 'jjForm', 'jjDist']}[from];
-        if (pair && (from === 'jjForm' ? to === 'dfForm' : to === 'jjForm')) {
-          files[to] = files[from];
-          if (files[pair[0]]) { files[pair[2]] = files[pair[0]]; delete files[pair[0]]; }
-          delete files[from];
-        } else {
-          files[to] = files[from];
-          delete files[from];
-        }
+        files[to] = files[from];
+        delete files[from];
         renderSlots();
       };
     });
@@ -172,15 +171,12 @@
   function run() {
     var missing = SLOTS.filter(function (s) { return !files[s.key]; }).map(function (s) { return s.label; });
     if (missing.length) { alert('还缺少文件:\n' + missing.join('\n')); return; }
-    if (!files.jjDist || !files.dfDist) {
-      log('提示: 部分问卷文件未识别出"发放情况"(中奖名单)sheet,头像匹配可能失败', 'err');
-    }
     log('开始审核…');
     var result;
     try {
       result = AuditCore.audit({
         rawOrders: {qiangji: files.qjRaw.rows, shengxue: files.sxRaw.rows},
-        distribution: {'进阶': (files.jjDist || {}).rows || [], '巅峰': (files.dfDist || {}).rows || []},
+        distribution: {'进阶': [], '巅峰': []},
         questionnaire: {'进阶': files.jjForm.rows, '巅峰': files.dfForm.rows},
         params: {
           channelPrefix: document.getElementById('prefix').value.trim() || 'grow_xcg_zhuanjs_xiaoshou',

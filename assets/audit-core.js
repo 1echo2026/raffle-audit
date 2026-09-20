@@ -305,8 +305,9 @@
 
     // 5) 匹配 + 期望奖池
     submissions.forEach(function (s) {
+      // 未提供"发放情况"(中奖名单)表时,跳过头像匹配校验(问卷表单已含基地/姓名/出单手机号,不再依赖发放表)
       var win = winners[s.pool][s.avatar];
-      s.avatar_matched = !!win;
+      s.avatar_matched = Object.keys(winners[s.pool]).length ? !!win : true;
       s.win_nickname = win ? win.nickname : '';
       s.win_redeem = win ? win.redeem : '';
       s.match = null;
