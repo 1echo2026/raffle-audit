@@ -354,9 +354,15 @@
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
+  // 获奖名单标题:活动周期名称与中奖期数即标题来源,自动生成,无需单独填写
+  function awardTitle(poolName) {
+    var p = (document.getElementById('period').value || '').trim();
+    return poolName + '奖池' + (p ? '（' + p + '）' : '') + '获奖名单';
+  }
+
   function renderImagePreview(r) {
-    var t1 = document.getElementById('titleDF').value.trim() || '巅峰奖池获奖名单';
-    var t2 = document.getElementById('titleJJ').value.trim() || '进阶奖池获奖名单';
+    var t1 = awardTitle('巅峰');
+    var t2 = awardTitle('进阶');
     document.getElementById('previewImage').innerHTML =
       sectionTable(t1, r.groups['巅峰']) + sectionTable(t2, r.groups['进阶']);
   }
@@ -950,8 +956,8 @@
   // 最终产物: 1 个 Excel,4 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单 / 异常名单沟通话术)
   function auditBook() {
     var r = lastResult;
-    var t1 = document.getElementById('titleDF').value.trim() || '巅峰奖池获奖名单';
-    var t2 = document.getElementById('titleJJ').value.trim() || '进阶奖池获奖名单';
+    var t1 = awardTitle('巅峰');
+    var t2 = awardTitle('进阶');
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
     XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖人员明细表');
@@ -1043,16 +1049,38 @@
     log('已导出 ' + sel.length + ' 项文件', 'ok');
   }
 
-  // ---------- 应用周期到标题 ----------
-  function applyPeriodToTitles() {
-    var p = (document.getElementById('period').value || '').trim();
-    if (!p) return;
-    var rule = /\（[^（）]*\）/;
-    ['titleDF', 'titleJJ'].forEach(function (id) {
-      var el = document.getElementById(id);
-      var v = el.value.trim();
-      if (v && rule.test(v)) el.value = v.replace(rule, '（' + p + '）');
-    });
+  // ---------- 时间范围按钮 + 弹窗 ----------
+  function fmtT(v) { return v ? v.replace('T', ' ') : '不限'; }
+  function updateTimeBtns() {
+    var fBtn = document.getElementById('btnTimeForm');
+    var oBtn = document.getElementById('btnTimeOrder');
+    if (fBtn) {
+      fBtn.textContent = '⏱ ' + fmtT(document.getElementById('formStart').value) + ' ~ ' + fmtT(document.getElementById('formEnd').value);
+      fBtn.classList.toggle('set', !!(document.getElementById('formStart').value || document.getElementById('formEnd').value));
+    }
+    if (oBtn) {
+      oBtn.textContent = '⏱ ' + fmtT(document.getElementById('orderStart').value) + ' ~ ' + fmtT(document.getElementById('orderEnd').value);
+      oBtn.classList.toggle('set', !!(document.getElementById('orderStart').value || document.getElementById('orderEnd').value));
+    }
+  }
+  function openTimeModal(kind) {
+    updateTimeBtns();
+    document.getElementById(kind === 'form' ? 'timeFormModal' : 'timeOrderModal').style.display = 'flex';
+  }
+  function saveTimeModal(kind) {
+    document.getElementById(kind === 'form' ? 'timeFormModal' : 'timeOrderModal').style.display = 'none';
+    updateTimeBtns();
+    log('时间范围已更新:' + (kind === 'form' ? '问卷提交' : '订单支付') + ' ' +
+        document.getElementById('btnTime' + (kind === 'form' ? 'Form' : 'Order')).textContent);
+  }
+  function clearTimeModal(kind) {
+    var a = document.getElementById(kind === 'form' ? 'formStart' : 'orderStart');
+    var b = document.getElementById(kind === 'form' ? 'formEnd' : 'orderEnd');
+    a.value = '';
+    b.value = '';
+    document.getElementById(kind === 'form' ? 'timeFormModal' : 'timeOrderModal').style.display = 'none';
+    updateTimeBtns();
+    log('已清除' + (kind === 'form' ? '问卷提交' : '订单支付') + '时间范围(不再限制)');
   }
 
   // ---------- 绑定 ----------
@@ -1077,10 +1105,24 @@
       if (e.target === this) closeDetailModal();
     });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetailModal(); });
-    document.getElementById('period').addEventListener('input', applyPeriodToTitles);
-    ['titleDF', 'titleJJ'].forEach(function (id) {
-      document.getElementById(id).addEventListener('input', function () { if (lastResult) renderImagePreview(lastResult); });
+    document.getElementById('period').addEventListener('input', function () { if (lastResult) renderImagePreview(lastResult); });
+
+    // 时间范围按钮 + 弹窗
+    document.getElementById('btnTimeForm').addEventListener('click', function () { openTimeModal('form'); });
+    document.getElementById('btnTimeOrder').addEventListener('click', function () { openTimeModal('order'); });
+    document.getElementById('timeFormSave').addEventListener('click', function () { saveTimeModal('form'); });
+    document.getElementById('timeOrderSave').addEventListener('click', function () { saveTimeModal('order'); });
+    document.getElementById('timeFormClear').addEventListener('click', function () { clearTimeModal('form'); });
+    document.getElementById('timeOrderClear').addEventListener('click', function () { clearTimeModal('order'); });
+    document.getElementById('timeFormClose').addEventListener('click', function () { document.getElementById('timeFormModal').style.display = 'none'; });
+    document.getElementById('timeOrderClose').addEventListener('click', function () { document.getElementById('timeOrderModal').style.display = 'none'; });
+    document.getElementById('timeFormModal').addEventListener('click', function (e) {
+      if (e.target === this) this.style.display = 'none';
     });
+    document.getElementById('timeOrderModal').addEventListener('click', function (e) {
+      if (e.target === this) this.style.display = 'none';
+    });
+    updateTimeBtns();
 
     // 导出选择弹窗
     document.getElementById('expConfirm').addEventListener('click', doExport);
@@ -1215,7 +1257,9 @@
       prizeBaseRows: function () { return lastResult ? prizeBaseSheet(lastResult) : null; },
       rankRows: function () { return lastResult ? rankSheet(lastResult) : null; },
       getHistory: loadHistory,
-      saveHistoryNow: saveHistory
+      saveHistoryNow: saveHistory,
+      updateTimeBtns: updateTimeBtns,
+      awardTitle: function (poolName) { return awardTitle(poolName); }
     };
   });
 })();

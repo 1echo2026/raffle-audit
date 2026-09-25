@@ -32,23 +32,17 @@
   <section class="card-panel">
     <h2><span class="step">2</span> 确认规则参数与本期时间范围</h2>
     <div class="params">
-      <label>活动周期名称(用于标题)
+      <label>活动周期名称(自动用于获奖名单标题与话术{周期})
         <input id="period" type="text" value="9.9-9.16">
       </label>
-      <label>期数(话术用,如 82)
+      <label>中奖期数(用于话术{期数}与导出文件名,如 82)
         <input id="qishu" type="text" value="82">
       </label>
-      <label>问卷提交开始时间(留空不限制)
-        <input id="formStart" type="datetime-local">
+      <label>问卷提交时间范围
+        <button type="button" class="btn plain time-btn" id="btnTimeForm">⏱ 不限 ~ 不限</button>
       </label>
-      <label>问卷提交结束时间(留空不限制)
-        <input id="formEnd" type="datetime-local">
-      </label>
-      <label>订单支付开始时间(留空不限制)
-        <input id="orderStart" type="datetime-local">
-      </label>
-      <label>订单支付结束时间(留空不限制)
-        <input id="orderEnd" type="datetime-local">
+      <label>订单支付时间范围
+        <button type="button" class="btn plain time-btn" id="btnTimeOrder">⏱ 不限 ~ 不限</button>
       </label>
       <label>有效渠道前缀
         <input id="prefix" type="text" value="grow_xcg_zhuanjs_xiaoshou">
@@ -59,19 +53,13 @@
       <label>巅峰门槛累计金额(元)
         <input id="threshold" type="number" value="20000">
       </label>
-      <label>巅峰奖池标题(图片格式用)
-        <input id="titleDF" type="text" value="巅峰奖池（9.9-9.16）获奖名单">
-      </label>
-      <label>进阶奖池标题(图片格式用)
-        <input id="titleJJ" type="text" value="进阶奖池（9.9-9.16）获奖名单">
-      </label>
       <label>审核单量排行
         <span class="chk-line"><input id="rankByCount" type="checkbox"> 明细表按工号出单单数从多到少排序(含单数列)</span>
       </label>
     </div>
     <div class="rules muted">
       判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。<br>
-      时间范围:填写后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),留空则不限制。修改"活动周期名称"会自动同步下方两个标题。
+      时间范围:点上方按钮设置后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),不设置则不限。获奖名单标题自动用"活动周期名称"生成,无需单独填写标题。
     </div>
 
     <h3 class="tpl-title">📞 异常名单沟通话术模板</h3>
@@ -191,6 +179,46 @@
         <label>基地<input id="editBase" type="text"></label>
       </div>
       <div class="exp-actions"><button class="btn primary" id="editSave">保存并重新匹配</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 问卷提交时间范围弹窗 -->
+<div id="timeFormModal" class="modal-mask" style="display:none">
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <span>⏱ 问卷提交时间范围</span>
+      <button type="button" id="timeFormClose" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="edit-fields">
+        <label>开始时间(留空不限制)<input id="formStart" type="datetime-local"></label>
+        <label>结束时间(留空不限制)<input id="formEnd" type="datetime-local"></label>
+      </div>
+      <div class="exp-actions">
+        <button class="btn plain" id="timeFormClear">清除</button>
+        <button class="btn primary" id="timeFormSave">确定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 订单支付时间范围弹窗 -->
+<div id="timeOrderModal" class="modal-mask" style="display:none">
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <span>⏱ 订单支付时间范围</span>
+      <button type="button" id="timeOrderClose" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="edit-fields">
+        <label>开始时间(留空不限制)<input id="orderStart" type="datetime-local"></label>
+        <label>结束时间(留空不限制)<input id="orderEnd" type="datetime-local"></label>
+      </div>
+      <div class="exp-actions">
+        <button class="btn plain" id="timeOrderClear">清除</button>
+        <button class="btn primary" id="timeOrderSave">确定</button>
+      </div>
     </div>
   </div>
 </div>

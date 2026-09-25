@@ -189,6 +189,11 @@ body {
 .search-count { margin: 2px 0 8px; }
 mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .chk-line { font-weight: normal; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #595959; }
+.params .time-btn {
+  padding: 8px 10px; font-weight: normal; font-size: 13px; text-align: left;
+  max-width: 380px; display: block; justify-content: flex-start;
+}
+.params .time-btn.set { border-color: var(--blue); color: var(--blue); background: #f0f5ff; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
 .green-tag { color: var(--green); font-weight: bold; }
