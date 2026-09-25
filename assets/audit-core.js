@@ -17,6 +17,7 @@
 
   var CN_NUM = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8};
   var NUM_CN = {1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八'};
+  var formSeq = 0;  // 提交记录的稳定编号(进阶问卷在前),跨重新审核保持一致,供前端绿色通道/修改定位
 
   function str(v) {
     if (v === null || v === undefined) return '';
@@ -116,7 +117,9 @@
         base: str(row[4]),
         real_name: str(row[5]),
         phone: cp.phone,
-        phone_format_ok: cp.ok
+        phone_format_ok: cp.ok,
+        form_i: formSeq++,
+        raw_row: row
       });
     }
     return out;
@@ -145,6 +148,7 @@
   // ---------- 主流程 ----------
   function audit(input) {
     var params = input.params || {};
+    formSeq = 0;
     var PREFIX = params.channelPrefix || 'grow_xcg_zhuanjs_xiaoshou';
     var MIN_AMT = toFloat(params.minAmount != null ? params.minAmount : 999);
     var THRESHOLD = toFloat(params.threshold != null ? params.threshold : 20000);
@@ -547,7 +551,8 @@
         submit_time: s.submit_time_raw, abnormal_type: s.abnormal_type,
         reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
         expected_pool: s.expected_pool, period: PERIOD, qishu: QISHU,
-        order_time: s.order_time || '', peak_orders: s.peak_orders || 0
+        order_time: s.order_time || '', peak_orders: s.peak_orders || 0,
+        form_i: s.form_i
       };
     }
     invalidList.forEach(function (s) { communication.push(commBase(s)); });

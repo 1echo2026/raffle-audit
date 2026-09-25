@@ -65,6 +65,9 @@
       <label>进阶奖池标题(图片格式用)
         <input id="titleJJ" type="text" value="进阶奖池（9.9-9.16）获奖名单">
       </label>
+      <label>审核单量排行
+        <span class="chk-line"><input id="rankByCount" type="checkbox"> 明细表按工号出单单数从多到少排序(含单数列)</span>
+      </label>
     </div>
     <div class="rules muted">
       判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。<br>
@@ -85,19 +88,32 @@
   <section id="results" class="card-panel" style="display:none">
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
-    <button id="btnDownload" class="btn gold">⬇ 一键下载全部 Excel(3 个文件)</button>
-    <p class="muted">包含:强基/升学有效订单池、获奖名单(图片格式·合并单元格粉头)、中奖人员明细表(基地/姓名/工号/奖项/奖品)、异常名单、异常名单沟通话术表</p>
+    <button id="btnDownload" class="btn gold">⬇ 导出(选择导出内容)</button>
+    <p class="muted">可选:强基/升学有效订单池、中奖名单审核结果.xlsx(获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术 4 个子表)、单量审核名单.xlsx(按工号出单单数排行)、第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数)</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
       <button class="tab" data-tab="t-detail">📋 中奖人员明细表</button>
       <button class="tab" data-tab="t-invalid">❌ 无效名单</button>
       <button class="tab" data-tab="t-comm">📞 异常名单沟通话术</button>
+      <button class="tab" data-tab="t-history">🕘 历史记录</button>
     </div>
     <div id="t-image" class="tabpane active"><div id="previewImage" class="preview"></div></div>
-    <div id="t-detail" class="tabpane"><div id="previewDetail" class="preview scroll"></div></div>
-    <div id="t-invalid" class="tabpane"><div id="previewInvalid" class="preview scroll"></div></div>
+    <div id="t-detail" class="tabpane">
+      <div class="toolbar"><input id="searchDetail" class="search" type="text" placeholder="🔍 查找 姓名/手机号/工号/奖品/金额…"></div>
+      <div id="previewDetail" class="preview scroll"></div>
+    </div>
+    <div id="t-invalid" class="tabpane">
+      <div class="toolbar"><input id="searchInvalid" class="search" type="text" placeholder="🔍 查找 姓名/手机号/奖品/原因…">
+        <span class="muted">行内按钮:🟢 绿色通道生成随机码直接通过 · ✏️ 修改信息后重新匹配(匹配成功转有效)</span></div>
+      <div id="previewInvalid" class="preview scroll"></div>
+    </div>
     <div id="t-comm" class="tabpane"><div id="previewComm" class="preview scroll"></div></div>
+    <div id="t-history" class="tabpane">
+      <div class="toolbar"><button id="btnSaveHistory" class="btn plain">💾 保存当前审核结果</button>
+        <span class="muted">每次点「开始审核」也会自动存档一条(存本机浏览器,不清除站点数据则一直保留)</span></div>
+      <div id="historyList"></div>
+    </div>
   </section>
 
   <footer class="foot muted">
@@ -113,6 +129,69 @@
       <button type="button" id="modalClose" class="modal-close">✕</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<!-- 导出选择弹窗 -->
+<div id="exportModal" class="modal-mask" style="display:none">
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <span>选择导出内容</span>
+      <button type="button" id="exportClose" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="exp-list">
+        <label><input type="checkbox" class="exp-item" value="qj" checked> 强基有效订单池.xlsx</label>
+        <label><input type="checkbox" class="exp-item" value="sx" checked> 升学有效订单池.xlsx</label>
+        <label><input type="checkbox" class="exp-item" value="audit" checked> 中奖名单审核结果.xlsx(4 个子表)</label>
+        <label><input type="checkbox" class="exp-item" value="rank" checked> 单量审核名单.xlsx(按工号出单单数排行)</label>
+        <label><input type="checkbox" class="exp-item" value="prize" checked> <span id="expPrizeLabel">第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数)</span></label>
+      </div>
+      <div class="exp-actions">
+        <button class="btn plain" id="expAll">全选</button>
+        <button class="btn plain" id="expNone">清空</button>
+        <button class="btn primary" id="expConfirm">导出所选</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 绿色通道弹窗 -->
+<div id="greenModal" class="modal-mask" style="display:none">
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <span>🟢 绿色通道 · 直接审核通过</span>
+      <button type="button" id="greenCancel" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="greenInfo" class="muted"></p>
+      <p>绿色通道码:<b id="greenCode" style="font-size:18px;letter-spacing:2px"></b></p>
+      <p class="muted">复制该码粘贴到下方输入框(或直接确认),点「确认通过」后该条转入有效名单,码留作凭证。</p>
+      <div class="exp-row">
+        <input id="greenPaste" type="text" placeholder="粘贴绿色通道码">
+        <button class="btn plain" id="greenCopy">📋 复制码</button>
+      </div>
+      <div class="exp-actions"><button class="btn primary" id="greenConfirm">✓ 确认通过</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 无效名单修改弹窗 -->
+<div id="editModal" class="modal-mask" style="display:none">
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <span>✏️ 修改信息并重新匹配</span>
+      <button type="button" id="editCancel" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="editInfo" class="muted"></p>
+      <div class="edit-fields">
+        <label>真实姓名<input id="editName" type="text"></label>
+        <label>出单手机号<input id="editPhone" type="text" placeholder="11 位手机号,修改后重新匹配订单"></label>
+        <label>基地<input id="editBase" type="text"></label>
+      </div>
+      <div class="exp-actions"><button class="btn primary" id="editSave">保存并重新匹配</button></div>
+    </div>
   </div>
 </div>
 

@@ -182,6 +182,33 @@ body {
 
 .foot { text-align: center; padding: 18px 0 40px; }
 
+/* 查找/工具栏/导出与操作弹窗/历史记录 */
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.search { padding: 7px 10px; border: 1px solid #d9d9d9; border-radius: 6px; width: 280px; max-width: 100%; font-size: 13px; }
+.search:focus { outline: none; border-color: var(--blue); }
+.search-count { margin: 2px 0 8px; }
+mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
+.chk-line { font-weight: normal; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #595959; }
+.btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
+.grid td.ops { white-space: nowrap; }
+.green-tag { color: var(--green); font-weight: bold; }
+.modal-narrow { width: min(560px, 94vw); }
+.exp-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.exp-list label { display: flex; gap: 8px; align-items: center; font-size: 13.5px; cursor: pointer; }
+.exp-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+.exp-actions .btn { padding: 7px 16px; font-size: 13px; }
+.exp-row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.exp-row input { flex: 1; padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
+.edit-fields { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.edit-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: bold; }
+.edit-fields input { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; font-weight: normal; }
+.hist-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; background: #fafafa; }
+.hist-main { font-weight: bold; font-size: 13.5px; margin-bottom: 4px; }
+.hist-stats { font-size: 12.5px; color: #595959; margin-bottom: 6px; }
+.hist-actions { display: flex; gap: 8px; }
+.hist-actions .btn { padding: 4px 12px; font-size: 12.5px; }
+.hist-actions-top { margin-bottom: 12px; }
+
 @media (max-width: 720px) {
   .slots { grid-template-columns: 1fr; }
   .winner-table { width: 100%; }
