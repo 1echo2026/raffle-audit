@@ -537,6 +537,7 @@
         return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
                 nickname: s.nickname, redeem: s.win_redeem,
                 order_time: s.order_time || '', total_amount: s.total_amount || 0,
+                green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
       }

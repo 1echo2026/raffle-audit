@@ -43,7 +43,8 @@
   // ---------- 样式 ----------
   var BORDER = {top: {style: 'thin', color: {rgb: 'FF7F7F7F'}}, bottom: {style: 'thin', color: {rgb: 'FF7F7F7F'}},
                 left: {style: 'thin', color: {rgb: 'FF7F7F7F'}}, right: {style: 'thin', color: {rgb: 'FF7F7F7F'}}};
-  function sHeader() { return {fill: {fgColor: {rgb: 'FFD9E1F2'}}, font: {bold: true}, alignment: {horizontal: 'center', vertical: 'center', wrapText: true}, border: BORDER}; }
+  // 表头统一样式(粉色,与获奖名单一致)
+  function sHeader() { return {fill: {fgColor: {rgb: 'FFFCE4D6'}}, font: {bold: true}, alignment: {horizontal: 'center', vertical: 'center', wrapText: true}, border: BORDER}; }
   function sCell(align) { return {alignment: {horizontal: align || 'left', vertical: 'center', wrapText: true}, border: BORDER}; }
   function sRed() { return {font: {color: {rgb: 'FFC00000'}, bold: true}, alignment: {horizontal: 'left', vertical: 'center', wrapText: true}, border: BORDER}; }
   var MONEY = '#,##0.00';
@@ -507,7 +508,8 @@
         return {base: b, name: s.real_name, gonghao: s.gonghao || '', phone: s.phone,
                 nickname: s.nickname, redeem: s.win_redeem || '',
                 order_time: s.order_time || '', total_amount: s.total_amount || 0,
-                green_code: s.green_code || '', form_i: s.form_i, account: s.account || '',
+                green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
+                form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
       }
       var out = [];
@@ -538,6 +540,7 @@
       var o = overrides[s.form_i];
       if (o) {
         s.green_code = o.green_code;
+        s.green_pass_manual = !!o.manual;   // 行内"通过"→备注填"通过";问卷填码→备注填码
         s.green_note = s.invalid_reasons || '';
         s.invalid_reasons = '';
         s.abnormal_type = '';
@@ -635,7 +638,7 @@
     var s = findSub(fi);
     if (!s) { alert('未找到该记录'); return; }
     var code = 'GC' + Date.now().toString(36).toUpperCase().slice(-6);
-    overrides[fi] = {green_code: code};
+    overrides[fi] = {green_code: code, manual: true};
     applyOverrides(lastResult);
     renderAll(lastResult);
     log('✅ 通过: ' + (s.real_name || s.nickname) + '(' + (s.phone || '') + ') 已转入中奖名单,凭证码 ' + code, 'ok');
@@ -686,6 +689,7 @@
       abnormal_type: s.abnormal_type, green_code: s.green_code, green_note: s.green_note,
       is_duplicate: !!s.is_duplicate, channel: s.channel, account: s.account, sales_name: s.sales_name,
       gonghao: s.gonghao, order_count: s.order_count, total_amount: s.total_amount,
+      convert_amount: s.convert_amount, green_pass_manual: !!s.green_pass_manual,
       max_single_order: s.max_single_order, peak_since: s.peak_since, order_time: s.order_time,
       peak_orders: s.peak_orders, win_redeem: s.win_redeem
     };
@@ -1105,20 +1109,27 @@
     return ws;
   }
 
-  // 第N期奖品底表:奖池/奖项等级/奖品/份数(中奖人数) + 用户id(按出单手机号在订单池匹配到的账号ID)
+  // 第N期奖品底表:每人一行(基地/姓名/工号/出单手机号/用户id/业绩归属时间/转化金额/奖池/奖项/奖品/备注)
+  // 备注:绿色通道码 或 通过(人工放行),两者都无则留空
   function prizeBaseSheet(r) {
-    var rows = [['序号','奖池','奖项等级','奖品名称','份数(中奖人数)','用户id(按出单手机号匹配)','备注']];
-    var idx = 0;
+    var rows = [['基地','姓名','工号','出单手机号','用户id','业绩归属时间','该出单手机号对应的转化金额','奖池','奖项','奖品','备注']];
     [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
       pp[1].forEach(function (g) {
-        idx++;
-        rows.push([idx, pp[0], g.level_text, g.prize, g.rows.length,
-                   g.rows.map(function (x) { return x.account || ''; }).join('、'), '']);
+        g.rows.forEach(function (x) {
+          var note = x.green_pass_manual ? '通过' : (x.green_code || '');
+          rows.push([x.base || '', x.name || '', x.gonghao || '', x.phone || '', x.account || '',
+                     x.order_time || '', x.convert_amount || 0, pp[0], g.level_text || '', g.prize || '', note]);
+        });
       });
     });
     var ws = aoa(rows);
-    styleAll(ws, 7);
-    setColWidths(ws, [6, 8, 12, 32, 14, 56, 20]);
+    styleAll(ws, 11);
+    setColWidths(ws, [10, 10, 12, 14, 30, 20, 22, 8, 10, 30, 16]);
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
+      if (c6) { c6.t = 'n'; c6.z = MONEY; }
+    }
     return ws;
   }
   function downloadPrizeBase() {
@@ -1134,7 +1145,7 @@
     var n = periodTag();
     document.getElementById('expPoolsLabel').textContent = '第' + n + '期有效订单池.xlsx(强基+升学两个子表)';
     document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(5 个子表:获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术/单量审核名单)';
-    document.getElementById('expPrizeLabel').textContent = '第' + n + '期奖品底表.xlsx(奖池/奖项等级/奖品/份数/用户id)';
+    document.getElementById('expPrizeLabel').textContent = '第' + n + '期奖品底表.xlsx(基地/姓名/工号/出单手机号/用户id/业绩归属时间/转化金额/奖池/奖项/奖品/备注)';
     document.getElementById('exportModal').style.display = 'flex';
   }
   function doExport() {
@@ -1352,7 +1363,7 @@
       getOverrides: function () { return overrides; },
       greenApprove: function (fi) {
         var code = 'GC-TEST' + String(Math.random()).slice(2, 6).toUpperCase();
-        overrides[fi] = {green_code: code};
+        overrides[fi] = {green_code: code, manual: true};
         applyOverrides(lastResult);
         renderAll(lastResult);
         return code;
