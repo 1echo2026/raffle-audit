@@ -27,6 +27,11 @@ body {
 .sub { margin: 0; opacity: .92; line-height: 1.7; }
 .muted { color: #8c8c8c; font-size: 12.5px; }
 
+/* 顶部页面跳转按钮 */
+.top-goto { margin-top: 14px; }
+.topbar .btn.plain { background: rgba(255,255,255,.14); color: #fff; border-color: rgba(255,255,255,.55); }
+.topbar .btn.plain:hover { background: rgba(255,255,255,.3); }
+
 .card-panel {
   background: #fff;
   border: 1px solid var(--border);
@@ -213,6 +218,24 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .hist-actions { display: flex; gap: 8px; }
 .hist-actions .btn { padding: 4px 12px; font-size: 12.5px; }
 .hist-actions-top { margin-bottom: 12px; }
+
+/* 绿色通道与可编辑单元格 */
+.run-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.green-codes { margin: 10px 0 4px; }
+.gc-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.gc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px dashed var(--green); border-radius: 8px;
+  padding: 5px 8px; background: #f6ffed;
+}
+.gc-chip b { font-family: Consolas, monospace; letter-spacing: 1px; }
+.gc-chip .btn-min { margin: 0; }
+.ed {
+  display: inline-block; min-width: 30px; outline: none;
+  border-bottom: 1px dashed transparent; padding: 0 2px; border-radius: 3px;
+}
+.ed:hover { border-bottom-color: var(--blue); background: #f0f5ff; }
+.ed:focus { background: #fffbe6; border-bottom-color: var(--gold); }
 
 @media (max-width: 720px) {
   .slots { grid-template-columns: 1fr; }

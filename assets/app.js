@@ -13,9 +13,9 @@
 
   // 人工裁决层(绿色通道): form_i -> {green_code};跨"重新审核"持续生效
   var overrides = {};
-  var pendingGreen = null;   // 绿色通道弹窗正在处理的 form_i
   var pendingEdit = null;    // 修改弹窗正在处理的 form_i
   var HIST_KEY = 'raffle_history_v1';
+  var GREEN_KEY = 'raffle_green_codes_v1';  // 首页生成的绿色通道码(填在问卷"出单手机号/ID"栏即放行)
 
   // ---------- 异常话术模板(独立页面维护,存 localStorage;常量与读写见 templates-core.js) ----------
   var templates = (window.TplCore ? TplCore.load() : []);
@@ -218,8 +218,8 @@
     var lv = levelText(s);
     return (lv && lv !== '奖品' ? lv + ' ' : '') + (s.prize_name || '');
   }
-  // 业绩归属渠道去掉订单池渠道单元格的 &&null&&null 脏后缀
-  function cleanChannel(c) { return (c || '').split('&&')[0]; }
+  // 业绩归属渠道保留订单池里查到的原值
+  function cleanChannel(c) { return c || ''; }
   // 问卷奖品查询:在进阶/巅峰两个奖池问卷(全部提交记录)中,按掩码手机号/真实姓名查找客户所中奖品
   function buildPrizeLookup() {
     var r = lastResult;
@@ -390,7 +390,9 @@
   }
   function detailFields(d) {
     return [d.pool, d.base, d.name, d.gh, d.phone, d.lvText, d.prize, d.green || '',
-            d.count == null ? '' : String(d.count), d.total == null ? '' : AuditCore.fmtMoney(d.total)];
+            d.conv == null ? '' : AuditCore.fmtMoney(d.conv),
+            d.count == null ? '' : String(d.count),
+            d.total == null ? '' : AuditCore.fmtMoney(d.total)];
   }
   function invalidFields(s) {
     return [s.pool, s.nickname, s.base, s.real_name, s.phone, s.prize_name, s.expected_pool, s.invalid_reasons, s.abnormal_type || ''];
@@ -398,7 +400,11 @@
   function rankMode() {
     return !!(document.getElementById('rankByCount') && document.getElementById('rankByCount').checked);
   }
-  // 明细条目:排行模式=按工号出单单数从多到少(含单数/累计金额列);默认=原分组顺序
+  // 可编辑表格单元格(明细表 基地/姓名/工号/出单手机号/奖品;无效名单 无效原因)
+  function edCell(fi, f, value, kws) {
+    return '<span class="ed" contenteditable="true" spellcheck="false" data-fi="' + fi + '" data-f="' + f + '">' + hl(value, kws) + '</span>';
+  }
+  // 明细条目:排行模式=按工号出单单数从多到少;默认=原分组顺序
   function detailItems(r) {
     var items = [];
     if (rankMode()) {
@@ -407,14 +413,15 @@
       }).forEach(function (s, i) {
         items.push({rank: i + 1, pool: s.pool, base: s.base, name: s.real_name || s.nickname,
           gh: s.gonghao || '', phone: s.phone, lvText: levelText(s) || '', prize: s.prize_name || '',
-          count: s.order_count || 0, total: s.total_amount || 0, green: s.green_code || ''});
+          conv: s.convert_amount || 0, count: s.order_count || 0, total: s.total_amount || 0, green: s.green_code || '', fi: s.form_i});
       });
     } else {
       [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
         pp[1].forEach(function (g) {
           g.rows.forEach(function (x) {
             items.push({pool: pp[0], base: x.base, name: x.name, gh: x.gonghao || '', phone: x.phone,
-              lvText: g.level_text, prize: g.prize, count: null, total: null, green: x.green_code || ''});
+              lvText: g.level_text, prize: g.prize, conv: x.convert_amount || 0, count: x.order_count || 0,
+              total: null, green: x.green_code || '', fi: x.form_i});
           });
         });
       });
@@ -429,20 +436,26 @@
     var items = all.filter(function (d) { return kwMatch(kws, detailFields(d)); });
     var hasGreen = (r.validList || []).some(function (s) { return s.green_code; });
     var h = ['<div class="muted search-count">共 ' + all.length + ' 人'
-      + (kws.length ? ' · 匹配 ' + items.length + ' 人' : '') + '</div>'];
+      + (kws.length ? ' · 匹配 ' + items.length + ' 人' : '') + ' · 点击 基地/姓名/工号/出单手机号/奖品 单元格可直接修改</div>'];
     h.push('<table class="grid"><tr><th>序号</th>');
     if (rank) h.push('<th>排行</th>');
-    h.push('<th>奖池</th><th>基地</th><th>姓名</th><th>工号</th><th>出单手机号</th><th>奖项</th><th>奖品</th>');
-    if (rank) h.push('<th>出单单数</th><th>累计金额</th>');
+    h.push('<th>奖池</th><th>基地</th><th>姓名</th><th>工号</th><th>出单手机号</th><th>转化金额</th><th>单量</th><th>奖项</th><th>奖品</th>');
+    if (rank) h.push('<th>累计金额</th>');
     if (hasGreen) h.push('<th>绿色通道</th>');
     h.push('</tr>');
     items.forEach(function (x, i) {
       h.push('<tr><td>' + (i + 1) + '</td>');
       if (rank) h.push('<td>' + x.rank + '</td>');
-      h.push('<td>' + hl(x.pool, kws) + '</td><td>' + hl(x.base, kws) + '</td><td>' + hl(x.name, kws) + '</td>'
-        + '<td>' + hl(x.gh, kws) + '</td><td>' + hl(x.phone, kws) + '</td><td>' + hl(x.lvText, kws) + '</td>'
-        + '<td>' + hl(x.prize, kws) + '</td>');
-      if (rank) h.push('<td>' + x.count + '</td><td>' + AuditCore.fmtMoney(x.total) + '</td>');
+      h.push('<td>' + hl(x.pool, kws) + '</td>'
+        + '<td>' + edCell(x.fi, 'base', x.base, kws) + '</td>'
+        + '<td>' + edCell(x.fi, 'name', x.name, kws) + '</td>'
+        + '<td>' + edCell(x.fi, 'gh', x.gh, kws) + '</td>'
+        + '<td>' + edCell(x.fi, 'phone', x.phone, kws) + '</td>'
+        + '<td>' + hl(AuditCore.fmtMoney(x.conv), kws) + '</td>'
+        + '<td>' + (x.count || 0) + '</td>'
+        + '<td>' + hl(x.lvText, kws) + '</td>'
+        + '<td>' + edCell(x.fi, 'prize', x.prize, kws) + '</td>');
+      if (rank) h.push('<td>' + AuditCore.fmtMoney(x.total) + '</td>');
       if (hasGreen) h.push('<td>' + (x.green ? '<span class="green-tag">🟢 ' + esc(x.green) + '</span>' : '') + '</td>');
       h.push('</tr>');
     });
@@ -454,14 +467,14 @@
     var kws = searchKws('searchInvalid');
     var list = (r.invalidList || []).filter(function (s) { return kwMatch(kws, invalidFields(s)); });
     var h = ['<div class="muted search-count">无效共 ' + (r.invalidList || []).length + ' 人'
-      + (kws.length ? ' · 匹配 ' + list.length + ' 人' : '') + '</div>'];
+      + (kws.length ? ' · 匹配 ' + list.length + ' 人' : '') + ' · 点击"无效原因"单元格可直接修改</div>'];
     h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>奖品</th><th>应属奖池</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
       h.push('<tr><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
         + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
-        + '<td class="reason">' + hl(s.invalid_reasons, kws) + '</td>'
-        + '<td class="ops"><button type="button" class="btn plain btn-min green-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">🟢 绿色通道</button> '
+        + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
+        + '<td class="ops"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button> '
         + '<button type="button" class="btn plain btn-min edit-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✏️ 修改</button></td></tr>');
     });
     h.push('</table>');
@@ -494,7 +507,8 @@
         return {base: b, name: s.real_name, gonghao: s.gonghao || '', phone: s.phone,
                 nickname: s.nickname, redeem: s.win_redeem || '',
                 order_time: s.order_time || '', total_amount: s.total_amount || 0,
-                green_code: s.green_code || ''};
+                green_code: s.green_code || '', form_i: s.form_i, account: s.account || '',
+                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
@@ -567,7 +581,8 @@
         formStart: document.getElementById('formStart').value,
         formEnd: document.getElementById('formEnd').value,
         orderStart: document.getElementById('orderStart').value,
-        orderEnd: document.getElementById('orderEnd').value
+        orderEnd: document.getElementById('orderEnd').value,
+        greenCodes: loadGreenCodes()
       }
     };
   }
@@ -581,35 +596,50 @@
     return lastResult;
   }
 
-  // ---------- 绿色通道(随机码 + 粘贴确认,单条直接通过) ----------
-  function genCode() {
-    var s = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', out = '';
-    for (var i = 0; i < 6; i++) out += s.charAt(Math.floor(Math.random() * s.length));
-    return 'GC-' + out;
+  // ---------- 绿色通道 ----------
+  // 首页生成随机码:问卷"出单手机号/ID"栏填写该码 → 审核自动放行(见 audit-core GREEN_SET)
+  function loadGreenCodes() {
+    try { return JSON.parse(localStorage.getItem(GREEN_KEY)) || []; } catch (e) { return []; }
   }
-  function openGreenModal(fi) {
+  function saveGreenCodes(arr) {
+    try { localStorage.setItem(GREEN_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  function genGreenCode() {
+    var s = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', out = '';
+    for (var i = 0; i < 8; i++) out += s.charAt(Math.floor(Math.random() * s.length));
+    var codes = loadGreenCodes();
+    codes.push(out);
+    saveGreenCodes(codes);
+    renderGreenCodes();
+    log('已生成绿色通道码: ' + out + '(共 ' + codes.length + ' 个)。将码填在问卷"出单用户手机号/ID"栏即可直接通过', 'ok');
+    return out;
+  }
+  function renderGreenCodes() {
+    var box = document.getElementById('greenCodesBox');
+    if (!box) return;
+    var codes = loadGreenCodes();
+    if (!codes.length) {
+      box.innerHTML = '<div class="muted">暂无绿色通道码。点"生成绿色通道码"后,把码告知抽奖人填写在问卷"出单用户手机号/ID"栏,审核时自动放行并出现在中奖名单。</div>';
+      return;
+    }
+    box.innerHTML = '<div class="muted">绿色通道码(填在问卷"出单手机号/ID"栏即直接通过):</div><div class="gc-list">' +
+      codes.map(function (c) {
+        return '<span class="gc-chip"><b>' + esc(c) + '</b>' +
+          '<button type="button" class="btn plain btn-min gc-copy" data-c="' + esc(c) + '">复制</button>' +
+          '<button type="button" class="btn plain btn-min gc-del" data-c="' + esc(c) + '">删除</button></span>';
+      }).join('') +
+      '<button type="button" class="btn plain btn-min" id="gcClear">清空全部</button></div>';
+  }
+  // 无效名单行内"通过"按钮:直接转入中奖名单,无需复制粘贴码(码后台自动生成仅留凭证)
+  function greenPass(fi) {
     var s = findSub(fi);
     if (!s) { alert('未找到该记录'); return; }
-    if (s.is_duplicate) { alert('该条是重复抽奖记录,请先在列表中确认'); }
-    pendingGreen = fi;
-    var code = genCode();
-    document.getElementById('greenCode').textContent = code;
-    document.getElementById('greenPaste').value = '';
-    document.getElementById('greenInfo').textContent =
-      (s.real_name || s.nickname || '') + ' · ' + (s.phone || '') + ' · ' + (s.prize_name || '') + ' · ' + (s.pool || '') + '奖池';
-    document.getElementById('greenModal').style.display = 'flex';
-  }
-  function confirmGreen() {
-    var code = (document.getElementById('greenPaste').value || '').trim().toUpperCase();
-    var shown = document.getElementById('greenCode').textContent;
-    if (!code) { alert('请先复制生成码并粘贴到输入框'); return; }
-    if (code !== shown) { alert('粘贴码与生成码不一致,生成码为: ' + shown); return; }
-    var s = findSub(pendingGreen);
-    overrides[pendingGreen] = {green_code: code};
-    document.getElementById('greenModal').style.display = 'none';
+    var code = 'GC' + Date.now().toString(36).toUpperCase().slice(-6);
+    overrides[fi] = {green_code: code};
     applyOverrides(lastResult);
     renderAll(lastResult);
-    log('绿色通道通过: ' + ((s && (s.real_name || s.nickname)) || '') + '(' + ((s && s.phone) || '') + ') 码=' + code, 'ok');
+    log('✅ 通过: ' + (s.real_name || s.nickname) + '(' + (s.phone || '') + ') 已转入中奖名单,凭证码 ' + code, 'ok');
+    return code;
   }
 
   // ---------- 无效名单手动修改(写回原始问卷行,重新匹配后可转有效) ----------
@@ -721,6 +751,56 @@
     el.innerHTML = top + html;
   }
 
+  // 本地记录按钮:不用上传文件即可回看历史
+  function showHistoryPanel() {
+    document.getElementById('results').style.display = 'block';
+    if (!lastResult) {
+      document.getElementById('stats').innerHTML =
+        '<div class="muted" style="padding:10px 0">尚未审核本轮数据。以下为本地保存的历次审核记录,点「加载」可回看当时结果。</div>';
+    }
+    document.querySelectorAll('.tab').forEach(function (x) { x.classList.toggle('active', x.dataset.tab === 't-history'); });
+    document.querySelectorAll('.tabpane').forEach(function (x) { x.classList.toggle('active', x.id === 't-history'); });
+    renderHistory(loadHistory());
+  }
+
+  // ---------- 编辑单元格保存 ----------
+  function saveDetailEdit(el) {
+    var fi = parseInt(el.getAttribute('data-fi'), 10);
+    var f = el.getAttribute('data-f');
+    if (isNaN(fi)) return;
+    var s = findSub(fi);
+    if (!s) return;
+    var v = (el.textContent || '').trim();
+    var old = '';
+    if (f === 'base') { old = s.base; s.base = v; if (s.raw_row) s.raw_row[4] = v; }
+    else if (f === 'name') { old = s.real_name; s.real_name = v; if (s.raw_row) s.raw_row[5] = v; }
+    else if (f === 'gh') { old = s.gonghao || ''; s.gonghao = v; }
+    else if (f === 'phone') { old = s.phone; s.phone = v; if (s.raw_row) s.raw_row[6] = v; }
+    else if (f === 'prize') { old = s.prize_name; s.prize_name = v; }
+    else return;
+    if (v === (old || '')) return;
+    rebuildGroups(lastResult);
+    renderStats(lastResult);
+    renderDetail(lastResult);
+    renderImagePreview(lastResult);
+    log('已修改中奖明细(' + ({base: '基地', name: '姓名', gh: '工号', phone: '出单手机号', prize: '奖品'}[f] || f) + '): ' +
+        (old || '—') + ' → ' + (v || '—'));
+  }
+  function saveInvalidEdit(el) {
+    var fi = parseInt(el.getAttribute('data-fi'), 10);
+    if (isNaN(fi)) return;
+    var s = findSub(fi);
+    if (!s) return;
+    var v = (el.textContent || '').trim();
+    if (v === (s.invalid_reasons || '')) return;
+    s.invalid_reasons = v;
+    if (AuditCore.classifyAbnormal) s.abnormal_type = AuditCore.classifyAbnormal(s);
+    (lastResult.communication || []).forEach(function (c) { if (c.form_i === fi) c.reason = v; });
+    renderInvalid(lastResult);
+    renderComm(lastResult);
+    log('已修改无效原因: ' + (s.real_name || s.nickname) + ' → ' + (v || '(已清空)'));
+  }
+
   function renderComm(r) {
     var rows = ['<table class="grid"><tr><th>序号</th><th>奖池</th><th>姓名</th><th>基地</th><th>手机号</th><th>异常类型</th><th>处理话术</th><th>备注</th></tr>'];
     r.communication.forEach(function (c, i) {
@@ -737,7 +817,7 @@
   // ---------- Excel 导出 ----------
   function downloadValidPool(poolName, pool) {
     var wb = XLSX.utils.book_new();
-    var rows = [pool.title, pool.header].concat(pool.kept);
+    var rows = (pool.title && pool.title.length ? [pool.title] : []).concat([pool.header], pool.kept);
     var ws = aoa(rows);
     styleAll(ws, (pool.header || []).length || 27);
     setColWidths(ws, new Array((pool.header || []).length || 27).fill(14));
@@ -833,7 +913,7 @@
     return ws;
   }
 
-  // 明细表 sheet:基地/姓名/奖品奖项与名/工号/出单手机号/业绩归属时间/累计订单金额(金额倒序);含绿色通道时追加一列
+  // 明细表 sheet:在出单手机号后加 转化金额/单量(按工号数透)列;金额按累计订单金额倒序;含绿色通道时追加一列
   function detailSheet(groupsDF, groupsJJ) {
     var all = [];
     [['巅峰', groupsDF], ['进阶', groupsJJ]].forEach(function (pp) {
@@ -842,6 +922,7 @@
           all.push({
             pool: pp[0], base: x.base, name: x.name, gonghao: x.gonghao, phone: x.phone,
             prize: (g.level_text && g.level_text !== '奖品' ? g.level_text + ' ' : '') + g.prize,
+            convert: x.convert_amount || 0, count: x.order_count || 0,
             order_time: x.order_time || '', amount: x.total_amount || 0, green: x.green_code || ''
           });
         });
@@ -849,21 +930,23 @@
     });
     all.sort(function (a, b) { return b.amount - a.amount; });
     var hasGreen = all.some(function (x) { return x.green; });
-    var head = ['序号','奖池','基地','姓名','奖品奖项与名','工号','出单手机号','业绩归属时间','累计订单金额'];
+    var head = ['序号','奖池','基地','姓名','奖品奖项与名','工号','出单手机号','转化金额','单量','业绩归属时间','累计订单金额'];
     if (hasGreen) head.push('绿色通道');
     var rows = [head];
     all.forEach(function (x, i) {
-      var rr = [i + 1, x.pool, x.base, x.name, x.prize, x.gonghao, x.phone, x.order_time, x.amount];
+      var rr = [i + 1, x.pool, x.base, x.name, x.prize, x.gonghao, x.phone, x.convert, x.count, x.order_time, x.amount];
       if (hasGreen) rr.push(x.green);
       rows.push(rr);
     });
     var ws = aoa(rows);
-    styleAll(ws, hasGreen ? 10 : 9);
-    setColWidths(ws, hasGreen ? [6, 8, 12, 10, 30, 12, 14, 20, 15, 14] : [6, 8, 12, 10, 30, 12, 14, 20, 15]);
+    styleAll(ws, hasGreen ? 12 : 11);
+    setColWidths(ws, hasGreen ? [6, 8, 12, 10, 30, 12, 14, 13, 8, 20, 15, 14] : [6, 8, 12, 10, 30, 12, 14, 13, 8, 20, 15]);
     var range = XLSX.utils.decode_range(ws['!ref']);
     for (var R = 1; R <= range.e.r; R++) {
-      var c8 = ws[XLSX.utils.encode_cell({r: R, c: 8})];
-      if (c8) { c8.t = 'n'; c8.z = MONEY; }
+      [7, 10].forEach(function (C) {
+        var c = ws[XLSX.utils.encode_cell({r: R, c: C})];
+        if (c) { c.t = 'n'; c.z = MONEY; }
+      });
     }
     return ws;
   }
@@ -953,7 +1036,15 @@
     downloadAuditResult();
   }
 
-  // 最终产物: 1 个 Excel,4 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单 / 异常名单沟通话术)
+  // 期数标签:文件名用(第【】期)。取中奖期数,空则用活动周期,再空则"本"
+  function periodTag() {
+    var q = (document.getElementById('qishu').value || '').trim();
+    if (q) return q;
+    var p = (document.getElementById('period').value || '').trim();
+    return p || '本';
+  }
+
+  // 最终产物: 1 个 Excel,5 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单 / 异常名单沟通话术 / 单量审核名单)
   function auditBook() {
     var r = lastResult;
     var t1 = awardTitle('巅峰');
@@ -963,14 +1054,32 @@
     XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖人员明细表');
     XLSX.utils.book_append_sheet(wb, abnormalSheet(r.communication), '异常名单');
     XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
+    XLSX.utils.book_append_sheet(wb, rankSheet(r), '单量审核名单');
     return wb;
   }
   function downloadAuditResult() {
-    XLSX.writeFile(auditBook(), '中奖名单审核结果.xlsx');
-    log('已导出: 中奖名单审核结果.xlsx(4 个子表)');
+    XLSX.writeFile(auditBook(), '第' + periodTag() + '期中奖名单审核结果.xlsx');
+    log('已导出: 第' + periodTag() + '期中奖名单审核结果.xlsx(5 个子表)');
   }
 
-  // 单量审核名单:按工号汇总出单单数从多到少
+  // 强基+升学有效订单池合并一个文件(两个子表),文件名带期数
+  function poolSheet(pool) {
+    var rows = [pool.title, pool.header].concat(pool.kept);
+    var ws = aoa(rows);
+    styleAll(ws, (pool.header || []).length || 27);
+    setColWidths(ws, new Array((pool.header || []).length || 27).fill(14));
+    return ws;
+  }
+  function downloadPools() {
+    var r = lastResult;
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, poolSheet(r.validPools['强基']), '强基有效订单池');
+    XLSX.utils.book_append_sheet(wb, poolSheet(r.validPools['升学']), '升学有效订单池');
+    XLSX.writeFile(wb, '第' + periodTag() + '期有效订单池.xlsx');
+    log('已导出: 第' + periodTag() + '期有效订单池.xlsx(强基+升学两个子表)');
+  }
+
+  // 单量审核名单:按工号汇总出单单数从多到少(作为审核结果的子表)
   function rankSheet(r) {
     var rows = [['序号','订单归属人姓名','工号','关联出单手机号','手机号数量','出单单数','工号累计有效金额','工号单笔最高金额','工号达2万时间']];
     var list = (r.nameGhRows || []).map(function (x) {
@@ -995,42 +1104,37 @@
     }
     return ws;
   }
-  function downloadRank() {
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, rankSheet(lastResult), '单量审核名单');
-    XLSX.writeFile(wb, '单量审核名单.xlsx');
-    log('已导出: 单量审核名单.xlsx');
-  }
 
-  // 第N期奖品底表:奖池/奖项等级/奖品/份数(中奖人数)
+  // 第N期奖品底表:奖池/奖项等级/奖品/份数(中奖人数) + 用户id(按出单手机号在订单池匹配到的账号ID)
   function prizeBaseSheet(r) {
-    var rows = [['序号','奖池','奖项等级','奖品名称','份数(中奖人数)','备注']];
+    var rows = [['序号','奖池','奖项等级','奖品名称','份数(中奖人数)','用户id(按出单手机号匹配)','备注']];
     var idx = 0;
     [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
       pp[1].forEach(function (g) {
         idx++;
-        rows.push([idx, pp[0], g.level_text, g.prize, g.rows.length, '']);
+        rows.push([idx, pp[0], g.level_text, g.prize, g.rows.length,
+                   g.rows.map(function (x) { return x.account || ''; }).join('、'), '']);
       });
     });
     var ws = aoa(rows);
-    styleAll(ws, 6);
-    setColWidths(ws, [6, 8, 12, 32, 14, 20]);
+    styleAll(ws, 7);
+    setColWidths(ws, [6, 8, 12, 32, 14, 56, 20]);
     return ws;
   }
   function downloadPrizeBase() {
-    var qs = (document.getElementById('qishu').value || '').trim();
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, prizeBaseSheet(lastResult), '奖品底表');
-    XLSX.writeFile(wb, '第' + (qs || '本') + '期奖品底表.xlsx');
-    log('已导出: 第' + (qs || '本') + '期奖品底表.xlsx');
+    XLSX.writeFile(wb, '第' + periodTag() + '期奖品底表.xlsx');
+    log('已导出: 第' + periodTag() + '期奖品底表.xlsx');
   }
 
   // ---------- 导出选择弹窗 ----------
   function openExportModal() {
     if (!lastResult) { alert('请先点击「开始审核」'); return; }
-    var qs = (document.getElementById('qishu').value || '').trim();
-    document.getElementById('expPrizeLabel').textContent =
-      '第' + (qs || '本') + '期奖品底表.xlsx(奖池/奖项等级/奖品/份数)';
+    var n = periodTag();
+    document.getElementById('expPoolsLabel').textContent = '第' + n + '期有效订单池.xlsx(强基+升学两个子表)';
+    document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(5 个子表:获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术/单量审核名单)';
+    document.getElementById('expPrizeLabel').textContent = '第' + n + '期奖品底表.xlsx(奖池/奖项等级/奖品/份数/用户id)';
     document.getElementById('exportModal').style.display = 'flex';
   }
   function doExport() {
@@ -1038,12 +1142,9 @@
     document.querySelectorAll('.exp-item').forEach(function (c) { if (c.checked) sel.push(c.value); });
     if (!sel.length) { alert('请至少勾选一项导出内容'); return; }
     document.getElementById('exportModal').style.display = 'none';
-    var r = lastResult;
     sel.forEach(function (v) {
-      if (v === 'qj') downloadValidPool('强基', r.validPools['强基']);
-      else if (v === 'sx') downloadValidPool('升学', r.validPools['升学']);
+      if (v === 'pools') downloadPools();
       else if (v === 'audit') downloadAuditResult();
-      else if (v === 'rank') downloadRank();
       else if (v === 'prize') downloadPrizeBase();
     });
     log('已导出 ' + sel.length + ' 项文件', 'ok');
@@ -1139,18 +1240,28 @@
       if (e.target === this) this.style.display = 'none';
     });
 
-    // 绿色通道弹窗
-    document.getElementById('greenConfirm').addEventListener('click', confirmGreen);
-    document.getElementById('greenCancel').addEventListener('click', function () {
-      document.getElementById('greenModal').style.display = 'none';
-    });
-    document.getElementById('greenCopy').addEventListener('click', function () {
-      var code = document.getElementById('greenCode').textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(code).then(function () { log('绿色通道码已复制: ' + code); }, function () {});
+    // 绿色通道(首页生成码 + 码列表操作)
+    document.getElementById('btnGenGreen').addEventListener('click', genGreenCode);
+    renderGreenCodes();
+    document.getElementById('greenCodesBox').addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== this && el.tagName !== 'BUTTON') el = el.parentElement;
+      if (!el || el === this) return;
+      if (el.id === 'gcClear') {
+        if (confirm('确定清空全部绿色通道码?')) { saveGreenCodes([]); renderGreenCodes(); log('已清空绿色通道码'); }
+        return;
       }
-      var p = document.getElementById('greenPaste');
-      p.focus(); p.select();
+      var c = el.getAttribute('data-c');
+      if (!c) return;
+      if (el.classList.contains('gc-copy')) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(c).then(function () { log('绿色通道码已复制: ' + c); }, function () {});
+        }
+      } else if (el.classList.contains('gc-del')) {
+        saveGreenCodes(loadGreenCodes().filter(function (x) { return x !== c; }));
+        renderGreenCodes();
+        log('已删除绿色通道码: ' + c);
+      }
     });
 
     // 无效名单弹窗(修改)
@@ -1161,11 +1272,8 @@
     document.getElementById('editModal').addEventListener('click', function (e) {
       if (e.target === this) this.style.display = 'none';
     });
-    document.getElementById('greenModal').addEventListener('click', function (e) {
-      if (e.target === this) this.style.display = 'none';
-    });
 
-    // 无效名每行操作按钮(事件委托)
+    // 无效名单每行操作按钮 + 无效原因单元格编辑
     document.getElementById('previewInvalid').addEventListener('click', function (e) {
       var el = e.target;
       while (el && el !== this && el.tagName !== 'BUTTON') el = el.parentElement;
@@ -1173,9 +1281,21 @@
       var fiRaw = el.getAttribute('data-fi');
       if (fiRaw == null || fiRaw === '') return;
       var fi = parseInt(fiRaw, 10);
-      if (el.classList.contains('green-btn')) openGreenModal(fi);
+      if (el.classList.contains('pass-btn')) greenPass(fi);
       else if (el.classList.contains('edit-btn')) openEditModal(fi);
     });
+    document.getElementById('previewInvalid').addEventListener('focusout', function (e) {
+      var el = e.target;
+      if (el && el.classList && el.classList.contains('ed') && el.getAttribute('data-f') === 'reason') saveInvalidEdit(el);
+    });
+    // 明细表单元格编辑
+    document.getElementById('previewDetail').addEventListener('focusout', function (e) {
+      var el = e.target;
+      if (el && el.classList && el.classList.contains('ed') && el.getAttribute('data-f') !== 'reason') saveDetailEdit(el);
+    });
+
+    // 历史记录按钮(步骤2 开始审核旁)
+    document.getElementById('btnHistory').addEventListener('click', showHistoryPanel);
 
     // 查找过滤(输入即重新渲染)
     document.getElementById('searchDetail').addEventListener('input', function () { if (lastResult) renderDetail(lastResult); });
@@ -1237,6 +1357,19 @@
         renderAll(lastResult);
         return code;
       },
+      setGreenCodes: function (arr) { saveGreenCodes(arr || []); },
+      getGreenCodes: loadGreenCodes,
+      genGreenCode: genGreenCode,
+      rerunAudit: rerunAudit,
+      auditBook: function () { return lastResult ? auditBook() : null; },
+      poolsBook: function () {
+        if (!lastResult) return null;
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, poolSheet(lastResult.validPools['强基']), '强基有效订单池');
+        XLSX.utils.book_append_sheet(wb, poolSheet(lastResult.validPools['升学']), '升学有效订单池');
+        return wb;
+      },
+      periodTag: periodTag,
       editEntry: function (fi, phone, name, base) {
         var s = findSub(fi);
         if (!s) throw new Error('entry not found: ' + fi);

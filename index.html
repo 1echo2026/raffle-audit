@@ -11,6 +11,7 @@
   <div class="wrap">
     <h1>🎁 中奖名单审核工具</h1>
     <p class="sub">上传 4 个 Excel → 自动过滤有效订单 · 头像/加密手机号匹配 · 按工号累计逐单判定进阶/巅峰奖池 → 一键导出结果。全部在浏览器本地计算,文件不会上传服务器。</p>
+    <div class="top-goto"><a class="btn plain" href="team-progress.html">📊 高经团队周进度核算</a></div>
   </div>
 </header>
 
@@ -68,7 +69,12 @@
       <span class="muted">话术自动保存在本机浏览器,可在独立页面修改。可用占位符:{姓名} {手机号} {奖池} {应属奖池} {奖品} {原因} {备注} {期数} {周期} {出单时间} {单数} {提交时间}</span>
     </div>
 
-    <button id="btnRun" class="btn primary">▶ 开始审核</button>
+    <div class="run-row">
+      <button id="btnGenGreen" class="btn plain">🟢 生成绿色通道码</button>
+      <button id="btnHistory" class="btn plain">🕘 本地记录</button>
+      <button id="btnRun" class="btn primary">▶ 开始审核</button>
+    </div>
+    <div id="greenCodesBox" class="green-codes"></div>
     <div id="log" class="log"></div>
   </section>
 
@@ -77,7 +83,7 @@
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
     <button id="btnDownload" class="btn gold">⬇ 导出(选择导出内容)</button>
-    <p class="muted">可选:强基/升学有效订单池、中奖名单审核结果.xlsx(获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术 4 个子表)、单量审核名单.xlsx(按工号出单单数排行)、第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数)</p>
+    <p class="muted">可选:第N期有效订单池.xlsx(强基+升学两个子表)、第N期中奖名单审核结果.xlsx(获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术/单量审核名单 5 个子表)、第N期奖品底表.xlsx(含用户id)</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
@@ -93,7 +99,7 @@
     </div>
     <div id="t-invalid" class="tabpane">
       <div class="toolbar"><input id="searchInvalid" class="search" type="text" placeholder="🔍 查找 姓名/手机号/奖品/原因…">
-        <span class="muted">行内按钮:🟢 绿色通道生成随机码直接通过 · ✏️ 修改信息后重新匹配(匹配成功转有效)</span></div>
+        <span class="muted">行内按钮:✅ 通过 直接把这一行转入中奖名单 · ✏️ 修改 信息后重新匹配 · 点击"无效原因"单元格可直接改写</span></div>
       <div id="previewInvalid" class="preview scroll"></div>
     </div>
     <div id="t-comm" class="tabpane"><div id="previewComm" class="preview scroll"></div></div>
@@ -129,37 +135,15 @@
     </div>
     <div class="modal-body">
       <div class="exp-list">
-        <label><input type="checkbox" class="exp-item" value="qj" checked> 强基有效订单池.xlsx</label>
-        <label><input type="checkbox" class="exp-item" value="sx" checked> 升学有效订单池.xlsx</label>
-        <label><input type="checkbox" class="exp-item" value="audit" checked> 中奖名单审核结果.xlsx(4 个子表)</label>
-        <label><input type="checkbox" class="exp-item" value="rank" checked> 单量审核名单.xlsx(按工号出单单数排行)</label>
-        <label><input type="checkbox" class="exp-item" value="prize" checked> <span id="expPrizeLabel">第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数)</span></label>
+        <label><input type="checkbox" class="exp-item" value="pools" checked> <span id="expPoolsLabel">第N期有效订单池.xlsx(强基+升学两个子表)</span></label>
+        <label><input type="checkbox" class="exp-item" value="audit" checked> <span id="expAuditLabel">第N期中奖名单审核结果.xlsx(5 个子表)</span></label>
+        <label><input type="checkbox" class="exp-item" value="prize" checked> <span id="expPrizeLabel">第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数/用户id)</span></label>
       </div>
       <div class="exp-actions">
         <button class="btn plain" id="expAll">全选</button>
         <button class="btn plain" id="expNone">清空</button>
         <button class="btn primary" id="expConfirm">导出所选</button>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- 绿色通道弹窗 -->
-<div id="greenModal" class="modal-mask" style="display:none">
-  <div class="modal-box modal-narrow">
-    <div class="modal-head">
-      <span>🟢 绿色通道 · 直接审核通过</span>
-      <button type="button" id="greenCancel" class="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <p id="greenInfo" class="muted"></p>
-      <p>绿色通道码:<b id="greenCode" style="font-size:18px;letter-spacing:2px"></b></p>
-      <p class="muted">复制该码粘贴到下方输入框(或直接确认),点「确认通过」后该条转入有效名单,码留作凭证。</p>
-      <div class="exp-row">
-        <input id="greenPaste" type="text" placeholder="粘贴绿色通道码">
-        <button class="btn plain" id="greenCopy">📋 复制码</button>
-      </div>
-      <div class="exp-actions"><button class="btn primary" id="greenConfirm">✓ 确认通过</button></div>
     </div>
   </div>
 </div>

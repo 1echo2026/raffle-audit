@@ -157,6 +157,12 @@
     var QISHU = str(params.qishu);
     var FORM_START = parseDt(params.formStart), FORM_END = parseDt(params.formEnd);      // 问卷提交时间范围
     var ORDER_START = parseDt(params.orderStart), ORDER_END = parseDt(params.orderEnd);  // 订单支付时间范围
+    // 绿色通道码:问卷"出单手机号/ID"栏填写该码即直接通过审核(人工放行,跳过全部匹配与时间检查)
+    var GREEN_SET = {};
+    (params.greenCodes || []).forEach(function (c) {
+      var k = String(c || '').trim().toUpperCase();
+      if (k) GREEN_SET[k] = 1;
+    });
 
     function inRange(dt, start, end) {
       if (!dt) return true;
@@ -175,7 +181,7 @@
         var rr = rows[k] || [];
         if (str(rr[0]) === '账号ID' || str(rr[1]) === '真实姓名') {
           header = rr;
-          title = k > 0 ? (rows[k - 1] || []) : rows[0] || [];
+          title = k > 0 ? (rows[k - 1] || []) : [];   // 表头在第0行时没有标题行,留空避免导出重复表头
           start = k + 1;
           break;
         }
@@ -316,6 +322,7 @@
       s.win_redeem = win ? win.redeem : '';
       s.match = null;
       s.total_amount = 0; s.order_count = 0; s.max_single_order = 0;
+      s.convert_amount = 0;   // 转化金额:该出单手机号匹配到的订单金额合计
       s.peak_since = null; s.expected_pool = ''; s.peak_reason = '';
       s.account = ''; s.sales_name = ''; s.gonghao = ''; s.abnormal_status = ''; s.channel = '';
       if (!s.phone_format_ok) return;
@@ -336,6 +343,9 @@
       }
       rows = xsRows;
       s.account = rows[0].account;
+      var cSum = 0;
+      rows.forEach(function (r) { cSum += r.amount; });
+      s.convert_amount = Math.round(cSum * 100) / 100;
       // 业绩归属渠道(匹配到的有效订单渠道,去重合并)
       var chSet = {};
       rows.forEach(function (r) { if (r.channel) chSet[r.channel] = 1; });
@@ -419,6 +429,17 @@
     var validList = [], invalidList = [];
     submissions.forEach(function (s) {
       var reasons = [], remark = '';
+      // 绿色通道:问卷"出单手机号/ID"栏填写绿色通道码 → 直接通过(跳过全部检查)
+      var gcKey = String(s.phone || '').trim().toUpperCase();
+      if (gcKey && GREEN_SET[gcKey]) {
+        s.green_code = gcKey;
+        s.green_note = '绿色通道码放行';
+        s.invalid_reasons = '';
+        s.abnormal_type = '';
+        s.remark = '';
+        if (!s.is_duplicate) validList.push(s);
+        return;
+      }
       if (!inRange(s.submit_dt, FORM_START, FORM_END)) {
         reasons.push('问卷提交时间' + (s.submit_time_raw || '未知') + '不在本期活动时间范围内');
       }
@@ -515,7 +536,9 @@
         if (b.lastIndexOf('基地') === b.length - 2) b = b.slice(0, -2);
         return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
                 nickname: s.nickname, redeem: s.win_redeem,
-                order_time: s.order_time || '', total_amount: s.total_amount || 0};
+                order_time: s.order_time || '', total_amount: s.total_amount || 0,
+                form_i: s.form_i, account: s.account || '',
+                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
@@ -595,6 +618,7 @@
 
   var api = {
     audit: audit,
+    classifyAbnormal: classifyAbnormal,
     parseDt: parseDt,
     fmtDt: fmtDt,
     fmtMoney: fmtMoney,
