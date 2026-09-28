@@ -443,6 +443,7 @@
     h.push('<th>奖池</th><th>基地</th><th>姓名</th><th>工号</th><th>出单手机号</th><th>转化金额</th><th>单量</th><th>奖项</th><th>奖品</th>');
     if (rank) h.push('<th>累计金额</th>');
     if (hasGreen) h.push('<th>绿色通道</th>');
+    h.push('<th>操作</th>');
     h.push('</tr>');
     items.forEach(function (x, i) {
       h.push('<tr><td>' + (i + 1) + '</td>');
@@ -458,6 +459,7 @@
         + '<td>' + edCell(x.fi, 'prize', x.prize, kws) + '</td>');
       if (rank) h.push('<td>' + AuditCore.fmtMoney(x.total) + '</td>');
       if (hasGreen) h.push('<td>' + (x.green ? '<span class="green-tag">🟢 ' + esc(x.green) + '</span>' : '') + '</td>');
+      h.push('<td class="ops"><button type="button" class="btn plain btn-min fail-btn" data-fi="' + (x.fi == null ? '' : x.fi) + '">❌ fail</button></td>');
       h.push('</tr>');
     });
     h.push('</table>');
@@ -476,6 +478,8 @@
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
         + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
         + '<td class="ops"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button> '
+        + '<button type="button" class="btn plain btn-min pending-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">'
+        + (s.audit_result ? '🕓 已待审核' : '🕓 待审核') + '</button> '
         + '<button type="button" class="btn plain btn-min edit-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✏️ 修改</button></td></tr>');
     });
     h.push('</table>');
@@ -533,33 +537,125 @@
     r.groups = {'巅峰': tg('巅峰', 4), '进阶': tg('进阶', 8)};
   }
 
+  // 话术表条目(与 audit-core commBase 字段一致),供 applyOverrides 重建
+  function commEntry(s, r) {
+    var p = (r && r.params) || {};
+    return {
+      pool: s.pool, nickname: s.nickname, real_name: s.real_name, base: s.base,
+      phone: s.phone, prize_name: s.prize_name, prize_level: s.prize_level,
+      gonghao: s.gonghao || '', channel_code: s.channel_code || '',
+      submit_time: s.submit_time_raw, abnormal_type: s.abnormal_type,
+      reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
+      expected_pool: s.expected_pool, period: p.period || '', qishu: p.qishu || '',
+      order_time: s.order_time || '', peak_orders: s.peak_orders || 0,
+      audit_result: s.audit_result || '', form_i: s.form_i
+    };
+  }
+  // 人工裁决统一入口:
+  //   overrides[form_i] = {green_code, manual, audit}  → 通过(无效→有效)
+  //   overrides[form_i] = {rejected:true}              → 明细表 fail 退回(有效→无效)
+  //   overrides[form_i].audit = '待审核通过补发'        → 话术表审核结果列
   function applyOverrides(r) {
-    var moved = 0;
+    var changed = false;
+    // 1) fail 退回:有效 → 无效(原本就在无效名单里的,重新审核后原因自动还原)
+    var keepValid = [];
+    (r.validList || []).forEach(function (s) {
+      var o = overrides[s.form_i];
+      if (o && o.rejected) {
+        s.invalid_reasons = o.reason || '中奖人员明细表手动退回';
+        s.abnormal_type = AuditCore.classifyAbnormal ? AuditCore.classifyAbnormal(s) : '其他异常';
+        s.remark = '';
+        delete s.green_code;
+        delete s.green_pass_manual;
+        s.fail_from_valid = true;
+        r.invalidList.push(s);
+        changed = true;
+      } else {
+        keepValid.push(s);
+      }
+    });
+    r.validList = keepValid;
+    // 2) 通过:无效 → 有效
     var keepInvalid = [];
     (r.invalidList || []).forEach(function (s) {
       var o = overrides[s.form_i];
-      if (o) {
+      if (o && !o.rejected && o.green_code) {
         s.green_code = o.green_code;
-        s.green_pass_manual = !!o.manual;   // 行内"通过"→备注填"通过";问卷填码→备注填码
+        s.green_pass_manual = o.manual !== false;   // 通过按钮生成的码
         s.green_note = s.invalid_reasons || '';
         s.invalid_reasons = '';
         s.abnormal_type = '';
         s.remark = '绿色通道通过(' + o.green_code + ')';
+        delete s.fail_from_valid;
         r.validList.push(s);
-        moved++;
+        changed = true;
       } else {
         keepInvalid.push(s);
       }
     });
     r.invalidList = keepInvalid;
-    if (moved) rebuildGroups(r);
+    if (changed) rebuildGroups(r);
+    // 3) 审核结果(待审核通过补发)落到记录上
+    function stampAudit(s) {
+      var o = overrides[s.form_i];
+      if (o && o.audit) s.audit_result = o.audit;
+    }
+    (r.validList || []).forEach(stampAudit);
+    (r.invalidList || []).forEach(stampAudit);
+    (r.duplicates || []).forEach(stampAudit);
+    // 4) 重建话术表(跟随最新名单与人工裁决)
+    var comm = [];
+    (r.invalidList || []).forEach(function (s) { comm.push(commEntry(s, r)); });
+    (r.duplicates || []).forEach(function (s) { comm.push(commEntry(s, r)); });
+    (r.validList || []).forEach(function (s) {
+      if (!s.abnormal_status) return;
+      var o = overrides[s.form_i];
+      if (o && o.green_code && !o.rejected) return;   // 通过放行的不再进话术表
+      comm.push(commEntry(s, r));
+    });
+    r.communication = comm;
     r.stats = r.stats || {};
     r.stats.valid = r.validList.length;
     r.stats.validJJ = r.validList.filter(function (s) { return s.pool === '进阶'; }).length;
     r.stats.validDF = r.validList.filter(function (s) { return s.pool === '巅峰'; }).length;
     r.stats.invalid = r.invalidList.length;
-    r.communication = (r.communication || []).filter(function (c) { return !overrides[c.form_i]; });
     return r;
+  }
+
+  // 明细表 fail:退回无效名单(原本是无效名单里"通过"进来的→还原原无效原因)
+  function failToInvalid(fi) {
+    var s = findSub(fi);
+    if (!s) { alert('未找到该记录'); return; }
+    var name = s.real_name || s.nickname || '';
+    var o = overrides[fi];
+    if (o && o.green_code && !o.rejected && s.green_note) {
+      // 通过进来的:退回时仍用原无效原因
+      overrides[fi] = {rejected: true, reason: s.green_note};
+      log('⛔ fail 退回: ' + name + ' 已回到无效名单(原无效原因保留)', 'err');
+    } else {
+      overrides[fi] = {rejected: true, reason: '中奖人员明细表手动退回'};
+      log('⛔ fail 退回: ' + name + ' 已回到无效名单(中奖人员明细表手动退回)', 'err');
+    }
+    applyOverrides(lastResult);
+    renderAll(lastResult);
+  }
+
+  // 无效名单"待审核":话术表审核结果列填"待审核通过补发"
+  function markPendingReview(fi) {
+    var s = findSub(fi);
+    if (!s) { alert('未找到该记录'); return; }
+    var o = overrides[fi] = overrides[fi] || {};
+    if (o.audit === '待审核通过补发') {
+      delete o.audit;
+      if (!o.rejected && !o.green_code) delete overrides[fi];
+      log('已取消待审核: ' + (s.real_name || s.nickname));
+    } else {
+      o.audit = '待审核通过补发';
+      log('已标记待审核: ' + (s.real_name || s.nickname) + ' → 话术表审核结果填「待审核通过补发」', 'ok');
+    }
+    applyOverrides(lastResult);
+    renderInvalid(lastResult);
+    renderComm(lastResult);
   }
 
   function renderAll(r) {
@@ -687,6 +783,7 @@
       prize_level: s.prize_level, prize_name: s.prize_name, submit_time_raw: s.submit_time_raw,
       expected_pool: s.expected_pool, invalid_reasons: s.invalid_reasons, remark: s.remark,
       abnormal_type: s.abnormal_type, green_code: s.green_code, green_note: s.green_note,
+      channel_code: s.channel_code, audit_result: s.audit_result, fail_from_valid: !!s.fail_from_valid,
       is_duplicate: !!s.is_duplicate, channel: s.channel, account: s.account, sales_name: s.sales_name,
       gonghao: s.gonghao, order_count: s.order_count, total_amount: s.total_amount,
       convert_amount: s.convert_amount, green_pass_manual: !!s.green_pass_manual,
@@ -743,16 +840,79 @@
       el.innerHTML = '<div class="muted">暂无历史记录。点击「开始审核」自动存档,或点上方「保存当前审核结果」手动存档。</div>';
       return;
     }
-    var top = '<div class="hist-actions-top"><button type="button" class="btn plain" id="histClear">🗑 清空全部</button></div>';
-    var html = h.map(function (x) {
-      return '<div class="hist-item"><div class="hist-main">🕘 ' + esc(x.ts) + ' · 第' + esc(String(x.qishu || '-')) + '期 '
-        + esc(x.period || '') + '</div><div class="hist-stats">提交 ' + x.stats.submitted
+    // 置顶优先,其余按时间倒序
+    var list = h.slice().sort(function (a, b) {
+      var pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return (b.id || 0) - (a.id || 0);
+    });
+    var top = '<div class="hist-actions-top"><button type="button" class="btn plain" id="histClear">🗑 清空全部</button>'
+      + '<span class="muted" style="margin-left:8px">右键记录可 命名 / 置顶 / 标注</span></div>';
+    var html = list.map(function (x) {
+      var title = (x.pinned ? '📌 ' : '') + (x.name ? esc(x.name) + ' · ' : '') + '🕘 ' + esc(x.ts)
+        + ' · 第' + esc(String(x.qishu || '-')) + '期 ' + esc(x.period || '');
+      var note = x.note ? '<div class="hist-note">📝 ' + esc(x.note) + '</div>' : '';
+      return '<div class="hist-item" data-id="' + x.id + '"><div class="hist-main">' + title + '</div>'
+        + note
+        + '<div class="hist-stats">提交 ' + x.stats.submitted
         + ' · 有效 ' + x.stats.valid + '(进阶' + x.stats.validJJ + '/巅峰' + x.stats.validDF + ') · 无效 '
         + x.stats.invalid + ' · 重复 ' + x.stats.duplicates + ' · 强基订单 ' + x.stats.qj + ' · 升学订单 ' + x.stats.sx + '</div>'
         + '<div class="hist-actions"><button type="button" class="btn plain hist-load" data-id="' + x.id + '">📂 加载</button>'
         + '<button type="button" class="btn plain hist-del" data-id="' + x.id + '">🗑 删除</button></div></div>';
     }).join('');
     el.innerHTML = top + html;
+  }
+
+  // 历史记录右键菜单:命名 / 置顶 / 标注
+  function updateHistItem(id, patch) {
+    var h = loadHistory();
+    h.forEach(function (x) { if (String(x.id) === String(id)) Object.keys(patch).forEach(function (k) { x[k] = patch[k]; }); });
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); } catch (e) {}
+    renderHistory(h);
+    return h;
+  }
+  function showHistMenu(ev, id) {
+    ev.preventDefault();
+    closeHistMenu();
+    var h = loadHistory();
+    var item = null;
+    h.forEach(function (x) { if (String(x.id) === String(id)) item = x; });
+    if (!item) return;
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'histMenu';
+    menu.style.left = ev.clientX + 'px';
+    menu.style.top = ev.clientY + 'px';
+    menu.innerHTML =
+      '<button type="button" data-act="rename">✏️ 命名</button>' +
+      '<button type="button" data-act="pin">' + (item.pinned ? '📌 取消置顶' : '📌 置顶') + '</button>' +
+      '<button type="button" data-act="note">🏷 标注</button>';
+    menu.addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== menu && el.tagName !== 'BUTTON') el = el.parentElement;
+      if (!el || el === menu) return;
+      var act = el.getAttribute('data-act');
+      if (act === 'rename') {
+        var v = prompt('给这条历史记录命名:', item.name || '');
+        if (v !== null) { updateHistItem(id, {name: v.trim()}); log('已命名历史记录: ' + (v.trim() || '(清空)')); }
+      } else if (act === 'pin') {
+        updateHistItem(id, {pinned: !item.pinned});
+        log(item.pinned ? '已取消置顶' : '已置顶该条历史记录');
+      } else if (act === 'note') {
+        var n = prompt('标注内容:', item.note || '');
+        if (n !== null) { updateHistItem(id, {note: n.trim()}); log('已标注历史记录: ' + (n.trim() || '(清空)')); }
+      }
+      closeHistMenu();
+    });
+    document.body.appendChild(menu);
+    // 防止超出视窗
+    var rect = menu.getBoundingClientRect();
+    if (rect.right > innerWidth) menu.style.left = (innerWidth - rect.width - 8) + 'px';
+    if (rect.bottom > innerHeight) menu.style.top = (innerHeight - rect.height - 8) + 'px';
+  }
+  function closeHistMenu() {
+    var m = document.getElementById('histMenu');
+    if (m) m.parentNode.removeChild(m);
   }
 
   // 本地记录按钮:不用上传文件即可回看历史
@@ -805,17 +965,65 @@
     log('已修改无效原因: ' + (s.real_name || s.nickname) + ' → ' + (v || '(已清空)'));
   }
 
+  // 异常名单沟通话术:筛选(奖池/基地/异常类型,带具体数目)
+  function commFilterVals() {
+    function v(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+    return {pool: v('cfPool'), base: v('cfBase'), type: v('cfType')};
+  }
+  function commMatch(c, f) {
+    if (f.pool && c.pool !== f.pool) return false;
+    if (f.base && (c.base || '') !== f.base) return false;
+    if (f.type && (c.abnormal_type || '') !== f.type) return false;
+    return true;
+  }
   function renderComm(r) {
-    var rows = ['<table class="grid"><tr><th>序号</th><th>奖池</th><th>姓名</th><th>基地</th><th>手机号</th><th>异常类型</th><th>处理话术</th><th>备注</th></tr>'];
-    r.communication.forEach(function (c, i) {
+    var all = r.communication || [];
+    var f = commFilterVals();
+    var list = all.filter(function (c) { return commMatch(c, f); });
+    // 三个筛选项 + 具体数目
+    function opts(id, field, label, fkey) {
+      var cnt = {};
+      all.forEach(function (c) {
+        var k = c[field] || '';
+        if (!k) return;
+        cnt[k] = (cnt[k] || 0) + 1;
+      });
+      var keys = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a] || a.localeCompare(b); });
+      var h = '<select id="' + id + '" class="cf-sel"><option value="">' + label + '(全部 ' + all.length + ')</option>';
+      keys.forEach(function (k) {
+        h += '<option value="' + esc(k) + '"' + (f[fkey] === k ? ' selected' : '') + '>' + esc(k) + ' (' + cnt[k] + ')</option>';
+      });
+      return h + '</select>';
+    }
+    var bar = '<div class="toolbar">' + opts('cfPool', 'pool', '奖池', 'pool') +
+      opts('cfBase', 'base', '基地', 'base') + opts('cfType', 'abnormal_type', '异常类型', 'type') +
+      '<button type="button" class="btn plain btn-min" id="cfReset">重置筛选</button>' +
+      '<span class="muted">共 ' + all.length + ' 条 · 当前筛选 ' + list.length + ' 条</span></div>';
+    var cols = ['基地','姓名','工号','出单手机号','奖池','奖品','异常类型','异常原因','处理话术','报备审核'];
+    var rows = [bar + '<table class="grid"><tr><th>序号</th>'];
+    cols.forEach(function (c) { rows.push('<th>' + c + '</th>'); });
+    rows.push('</tr>');
+    list.forEach(function (c, i) {
       var name = c.real_name || c.nickname || '';
-      rows.push('<tr><td>' + (i + 1) + '</td><td>' + esc(c.pool) + '</td><td>' + esc(name) +
-        '</td><td>' + esc(c.base) + '</td><td>' + esc(c.phone) + '</td><td>' + esc(c.abnormal_type) +
-        '</td><td class="reason" style="text-align:left">' + esc(scriptFor(c)) +
-        '</td><td style="text-align:left">' + esc(c.reason || c.remark) + '</td></tr>');
+      var script = scriptFor(c);
+      rows.push('<tr><td>' + (i + 1) + '</td>'
+        + '<td>' + esc(c.base) + '</td><td>' + esc(name) + '</td><td>' + esc(c.gonghao || '') + '</td>'
+        + '<td>' + esc(c.phone) + '</td><td>' + esc(c.pool) + '</td><td>' + esc(c.prize_name) + '</td>'
+        + '<td class="reason" style="text-align:left">' + esc(c.abnormal_type) + '</td>'
+        + '<td style="text-align:left">' + esc(commReason(c)) + '</td>'
+        + '<td class="reason" style="text-align:left">' + esc(script) + '</td>'
+        + '<td style="text-align:left">' + esc(c.audit_result || '') + '</td></tr>');
     });
     rows.push('</table>');
     document.getElementById('previewComm').innerHTML = rows.join('');
+  }
+  // 异常原因:非转介绍/非销售直推时把订单池匹配到的渠道前缀码显式带出
+  function commReason(c) {
+    var reason = c.reason || c.remark || '';
+    if (c.channel_code && (reason.indexOf('非转介绍') >= 0 || reason.indexOf('非销售直推') >= 0)) {
+      if (reason.indexOf(c.channel_code) < 0) reason += '（订单池匹配渠道前缀码：' + c.channel_code + '）';
+    }
+    return reason;
   }
 
   // ---------- Excel 导出 ----------
@@ -917,40 +1125,26 @@
     return ws;
   }
 
-  // 明细表 sheet:在出单手机号后加 转化金额/单量(按工号数透)列;金额按累计订单金额倒序;含绿色通道时追加一列
+  // 中奖明细（奖品底表）:每人一行
+  // 列: 基地/姓名/工号/出单手机号/该手机号转化金额/用户id/业绩归属时间/奖池/奖项/奖品/绿色通道(通过按钮生成的码)
   function detailSheet(groupsDF, groupsJJ) {
-    var all = [];
+    var rows = [['基地','姓名','工号','出单手机号','该手机号转化金额','用户id','业绩归属时间','奖池','奖项','奖品','绿色通道']];
     [['巅峰', groupsDF], ['进阶', groupsJJ]].forEach(function (pp) {
       pp[1].forEach(function (g) {
         g.rows.forEach(function (x) {
-          all.push({
-            pool: pp[0], base: x.base, name: x.name, gonghao: x.gonghao, phone: x.phone,
-            prize: (g.level_text && g.level_text !== '奖品' ? g.level_text + ' ' : '') + g.prize,
-            convert: x.convert_amount || 0, count: x.order_count || 0,
-            order_time: x.order_time || '', amount: x.total_amount || 0, green: x.green_code || ''
-          });
+          rows.push([x.base || '', x.name || '', x.gonghao || '', x.phone || '', x.convert_amount || 0,
+                     x.account || '', x.order_time || '', pp[0], g.level_text || '', g.prize || '',
+                     x.green_code || '']);
         });
       });
     });
-    all.sort(function (a, b) { return b.amount - a.amount; });
-    var hasGreen = all.some(function (x) { return x.green; });
-    var head = ['序号','奖池','基地','姓名','奖品奖项与名','工号','出单手机号','转化金额','单量','业绩归属时间','累计订单金额'];
-    if (hasGreen) head.push('绿色通道');
-    var rows = [head];
-    all.forEach(function (x, i) {
-      var rr = [i + 1, x.pool, x.base, x.name, x.prize, x.gonghao, x.phone, x.convert, x.count, x.order_time, x.amount];
-      if (hasGreen) rr.push(x.green);
-      rows.push(rr);
-    });
     var ws = aoa(rows);
-    styleAll(ws, hasGreen ? 12 : 11);
-    setColWidths(ws, hasGreen ? [6, 8, 12, 10, 30, 12, 14, 13, 8, 20, 15, 14] : [6, 8, 12, 10, 30, 12, 14, 13, 8, 20, 15]);
+    styleAll(ws, 11);
+    setColWidths(ws, [10, 10, 12, 14, 18, 30, 20, 8, 10, 30, 16]);
     var range = XLSX.utils.decode_range(ws['!ref']);
     for (var R = 1; R <= range.e.r; R++) {
-      [7, 10].forEach(function (C) {
-        var c = ws[XLSX.utils.encode_cell({r: R, c: C})];
-        if (c) { c.t = 'n'; c.z = MONEY; }
-      });
+      var c4 = ws[XLSX.utils.encode_cell({r: R, c: 4})];
+      if (c4) { c4.t = 'n'; c4.z = MONEY; }
     }
     return ws;
   }
@@ -997,40 +1191,28 @@
   }
 
   // 异常名单沟通话术 sheet
+  // 列: 序号/基地/姓名/工号/出单手机号/奖池/奖品/异常类型(红)/异常原因/处理话术(红)/审核结果
   function commSheet(comm) {
-    var rows = [['序号','奖池','姓名','基地','出单手机号','异常类型','处理话术','备注']];
+    var rows = [['序号','基地','姓名','工号','出单手机号','奖池','奖品','异常类型','异常原因','处理话术','审核结果']];
     comm.forEach(function (c, i) {
-      rows.push([i + 1, c.pool, c.real_name || c.nickname || '', c.base, c.phone,
-        c.abnormal_type, scriptFor(c), c.reason || c.remark]);
+      rows.push([i + 1, c.base, c.real_name || c.nickname || '', c.gonghao || '', c.phone,
+        c.pool, c.prize_name, c.abnormal_type, commReason(c), scriptFor(c), c.audit_result || '']);
     });
     var ws = aoa(rows);
-    styleAll(ws, 8);
-    setColWidths(ws, [5, 8, 12, 10, 14, 16, 66, 40]);
+    styleAll(ws, 11);
+    setColWidths(ws, [5, 10, 12, 12, 14, 8, 26, 16, 52, 60, 18]);
     var range = XLSX.utils.decode_range(ws['!ref']);
     for (var R = 1; R <= range.e.r; R++) {
-      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
-      if (c6) c6.s = sRed();
+      [7, 9].forEach(function (C) {   // 异常类型 / 处理话术 红色
+        var c = ws[XLSX.utils.encode_cell({r: R, c: C})];
+        if (c) c.s = sRed();
+      });
     }
     return ws;
   }
 
-  // 异常名单 sheet:无效 + 重复 + 含退款/换课订单,异常类型列红色
-  function abnormalSheet(comm) {
-    var rows = [['序号','奖池','姓名','基地','出单手机号','奖品','异常类型','原因','备注']];
-    comm.forEach(function (c, i) {
-      rows.push([i + 1, c.pool, c.real_name || c.nickname || '', c.base, c.phone,
-        c.prize_name, c.abnormal_type, c.reason || c.remark, c.remark]);
-    });
-    var ws = aoa(rows);
-    styleAll(ws, 9);
-    setColWidths(ws, [5, 8, 12, 10, 14, 26, 16, 56, 24]);
-    var range = XLSX.utils.decode_range(ws['!ref']);
-    for (var R = 1; R <= range.e.r; R++) {
-      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
-      if (c6) c6.s = sRed();
-    }
-    return ws;
-  }
+  // 异常名单 sheet 已下线(内容并入"异常名单沟通话术"),保留函数名以免旧引用报错
+  function abnormalSheet(comm) { return commSheet(comm); }
 
   function downloadAll() {
     if (!lastResult) return;
@@ -1048,22 +1230,21 @@
     return p || '本';
   }
 
-  // 最终产物: 1 个 Excel,5 个子工作表(图片格式获奖名单 / 中奖人员明细表 / 异常名单 / 异常名单沟通话术 / 单量审核名单)
+  // 最终产物: 1 个 Excel,4 个子工作表(图片格式获奖名单 / 中奖明细（奖品底表） / 异常名单沟通话术 / 单量审核名单)
   function auditBook() {
     var r = lastResult;
     var t1 = awardTitle('巅峰');
     var t2 = awardTitle('进阶');
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
-    XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖人员明细表');
-    XLSX.utils.book_append_sheet(wb, abnormalSheet(r.communication), '异常名单');
+    XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖明细（奖品底表）');
     XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
     XLSX.utils.book_append_sheet(wb, rankSheet(r), '单量审核名单');
     return wb;
   }
   function downloadAuditResult() {
     XLSX.writeFile(auditBook(), '第' + periodTag() + '期中奖名单审核结果.xlsx');
-    log('已导出: 第' + periodTag() + '期中奖名单审核结果.xlsx(5 个子表)');
+    log('已导出: 第' + periodTag() + '期中奖名单审核结果.xlsx(4 个子表)');
   }
 
   // 强基+升学有效订单池合并一个文件(两个子表),文件名带期数
@@ -1109,43 +1290,15 @@
     return ws;
   }
 
-  // 第N期奖品底表:每人一行(基地/姓名/工号/出单手机号/用户id/业绩归属时间/转化金额/奖池/奖项/奖品/备注)
-  // 备注:绿色通道码 或 通过(人工放行),两者都无则留空
-  function prizeBaseSheet(r) {
-    var rows = [['基地','姓名','工号','出单手机号','用户id','业绩归属时间','该出单手机号对应的转化金额','奖池','奖项','奖品','备注']];
-    [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
-      pp[1].forEach(function (g) {
-        g.rows.forEach(function (x) {
-          var note = x.green_pass_manual ? '通过' : (x.green_code || '');
-          rows.push([x.base || '', x.name || '', x.gonghao || '', x.phone || '', x.account || '',
-                     x.order_time || '', x.convert_amount || 0, pp[0], g.level_text || '', g.prize || '', note]);
-        });
-      });
-    });
-    var ws = aoa(rows);
-    styleAll(ws, 11);
-    setColWidths(ws, [10, 10, 12, 14, 30, 20, 22, 8, 10, 30, 16]);
-    var range = XLSX.utils.decode_range(ws['!ref']);
-    for (var R = 1; R <= range.e.r; R++) {
-      var c6 = ws[XLSX.utils.encode_cell({r: R, c: 6})];
-      if (c6) { c6.t = 'n'; c6.z = MONEY; }
-    }
-    return ws;
-  }
-  function downloadPrizeBase() {
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, prizeBaseSheet(lastResult), '奖品底表');
-    XLSX.writeFile(wb, '第' + periodTag() + '期奖品底表.xlsx');
-    log('已导出: 第' + periodTag() + '期奖品底表.xlsx');
-  }
+  // 第N期奖品底表已并入"中奖名单审核结果.xlsx"里的「中奖明细（奖品底表）」子表,不再单独导出
+  function prizeBaseSheet(r) { return detailSheet(r.groups['巅峰'], r.groups['进阶']); }
 
   // ---------- 导出选择弹窗 ----------
   function openExportModal() {
     if (!lastResult) { alert('请先点击「开始审核」'); return; }
     var n = periodTag();
     document.getElementById('expPoolsLabel').textContent = '第' + n + '期有效订单池.xlsx(强基+升学两个子表)';
-    document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(5 个子表:获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术/单量审核名单)';
-    document.getElementById('expPrizeLabel').textContent = '第' + n + '期奖品底表.xlsx(基地/姓名/工号/出单手机号/用户id/业绩归属时间/转化金额/奖池/奖项/奖品/备注)';
+    document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(4 个子表:获奖名单图片格式/中奖明细（奖品底表）/异常名单沟通话术/单量审核名单)';
     document.getElementById('exportModal').style.display = 'flex';
   }
   function doExport() {
@@ -1156,7 +1309,6 @@
     sel.forEach(function (v) {
       if (v === 'pools') downloadPools();
       else if (v === 'audit') downloadAuditResult();
-      else if (v === 'prize') downloadPrizeBase();
     });
     log('已导出 ' + sel.length + ' 项文件', 'ok');
   }
@@ -1293,7 +1445,38 @@
       if (fiRaw == null || fiRaw === '') return;
       var fi = parseInt(fiRaw, 10);
       if (el.classList.contains('pass-btn')) greenPass(fi);
+      else if (el.classList.contains('pending-btn')) markPendingReview(fi);
       else if (el.classList.contains('edit-btn')) openEditModal(fi);
+    });
+    // 明细表 fail 按钮
+    document.getElementById('previewDetail').addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== this && el.tagName !== 'BUTTON') el = el.parentElement;
+      if (!el || el === this) return;
+      var fiRaw = el.getAttribute('data-fi');
+      if (fiRaw == null || fiRaw === '') return;
+      if (el.classList.contains('fail-btn')) {
+        var s = findSub(parseInt(fiRaw, 10));
+        var nm = s ? (s.real_name || s.nickname || '') : '';
+        if (!confirm('确认把「' + nm + '」退回无效名单?')) return;
+        failToInvalid(parseInt(fiRaw, 10));
+      }
+    });
+    // 话术表筛选(奖池/基地/异常类型)
+    document.getElementById('previewComm').addEventListener('change', function (e) {
+      if (e.target && e.target.classList.contains('cf-sel') && lastResult) renderComm(lastResult);
+    });
+    document.getElementById('previewComm').addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== this && el.tagName !== 'BUTTON') el = el.parentElement;
+      if (!el || el === this) return;
+      if (el.id === 'cfReset') {
+        ['cfPool', 'cfBase', 'cfType'].forEach(function (id) {
+          var s = document.getElementById(id);
+          if (s) s.value = '';
+        });
+        if (lastResult) renderComm(lastResult);
+      }
     });
     document.getElementById('previewInvalid').addEventListener('focusout', function (e) {
       var el = e.target;
@@ -1345,6 +1528,16 @@
         log('已删除一条历史记录,剩余 ' + h2.length + ' 条');
       }
     });
+    // 历史记录:右键菜单(命名/置顶/标注)
+    document.getElementById('historyList').addEventListener('contextmenu', function (e) {
+      var el = e.target;
+      while (el && el !== this && !el.classList.contains('hist-item')) el = el.parentElement;
+      if (!el || el === this) return;
+      showHistMenu(e, el.getAttribute('data-id'));
+    });
+    document.addEventListener('click', closeHistMenu);
+    document.addEventListener('scroll', closeHistMenu, true);
+
     renderHistory(loadHistory());
 
     // 暴露给自动化自测使用
@@ -1371,6 +1564,17 @@
       setGreenCodes: function (arr) { saveGreenCodes(arr || []); },
       getGreenCodes: loadGreenCodes,
       genGreenCode: genGreenCode,
+      failToInvalid: failToInvalid,
+      markPendingReview: markPendingReview,
+      updateHistItem: updateHistItem,
+      commFilterVals: commFilterVals,
+      setCommFilter: function (f) {
+        ['cfPool', 'cfBase', 'cfType'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.value = f || '';
+        });
+        if (lastResult) renderComm(lastResult);
+      },
       rerunAudit: rerunAudit,
       auditBook: function () { return lastResult ? auditBook() : null; },
       poolsBook: function () {

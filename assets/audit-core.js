@@ -417,6 +417,13 @@
         var t = submissions[i].submit_dt ? submissions[i].submit_dt.getTime() : 8.64e15;
         if (t === firstT && submissions[i].pool === '巅峰' && submissions[earliest].pool !== '巅峰') earliest = i;
       });
+      // 同一手机号在进阶/巅峰都抽过,且其订单已累计达2万(应属巅峰):
+      // 只保留巅峰奖池奖品,不再保留进阶奖池奖品(先抽进阶、后续累计达标的情形)
+      if (submissions[earliest].expected_pool === '巅峰') {
+        var peakIdx = -1;
+        idxs.forEach(function (i) { if (submissions[i].pool === '巅峰') peakIdx = i; });
+        if (peakIdx >= 0) earliest = peakIdx;
+      }
       idxs.forEach(function (i) {
         if (i === earliest) return;
         submissions[i].is_duplicate = true;
@@ -446,7 +453,9 @@
       if (!s.phone_format_ok) {
         reasons.push('出单手机号格式不正确，在订单池中查找不到，疑似输入错误');
       } else if (s.channel_bad) {
-        var cbCh = s.channel_bad.channel;
+        // 渠道前缀码:取订单池渠道值去掉 &&null&&null 脏后缀,展示给人工核对
+        var cbCh = String(s.channel_bad.channel || '').split('&&')[0];
+        s.channel_code = cbCh;
         if (cbCh.indexOf('grow_xcg_zhuanjs_fudao') === 0) {
           reasons.push('未在有效订单池查找到（订单归属渠道非销售直推渠道：' + cbCh + '，属于辅导leads接单）');
         } else {
@@ -572,11 +581,12 @@
       return {
         pool: s.pool, nickname: s.nickname, real_name: s.real_name, base: s.base,
         phone: s.phone, prize_name: s.prize_name, prize_level: s.prize_level,
+        gonghao: s.gonghao || '', channel_code: s.channel_code || '',
         submit_time: s.submit_time_raw, abnormal_type: s.abnormal_type,
         reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
         expected_pool: s.expected_pool, period: PERIOD, qishu: QISHU,
         order_time: s.order_time || '', peak_orders: s.peak_orders || 0,
-        form_i: s.form_i
+        audit_result: s.audit_result || '', form_i: s.form_i
       };
     }
     invalidList.forEach(function (s) { communication.push(commBase(s)); });

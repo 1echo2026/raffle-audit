@@ -83,7 +83,7 @@
     <h2><span class="step">3</span> 审核结果与导出</h2>
     <div id="stats" class="stats"></div>
     <button id="btnDownload" class="btn gold">⬇ 导出(选择导出内容)</button>
-    <p class="muted">可选:第N期有效订单池.xlsx(强基+升学两个子表)、第N期中奖名单审核结果.xlsx(获奖名单图片格式/中奖人员明细表/异常名单/异常名单沟通话术/单量审核名单 5 个子表)、第N期奖品底表.xlsx(每人一行:基地/姓名/工号/出单手机号/用户id/业绩归属时间/转化金额/奖池/奖项/奖品/备注)</p>
+    <p class="muted">可选:第N期有效订单池.xlsx(强基+升学两个子表)、第N期中奖名单审核结果.xlsx(获奖名单图片格式 / 中奖明细（奖品底表）/ 异常名单沟通话术 / 单量审核名单 4 个子表)</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="t-image">🏆 获奖名单(图片格式预览)</button>
@@ -94,12 +94,13 @@
     </div>
     <div id="t-image" class="tabpane active"><div id="previewImage" class="preview"></div></div>
     <div id="t-detail" class="tabpane">
-      <div class="toolbar"><input id="searchDetail" class="search" type="text" placeholder="🔍 查找 姓名/手机号/工号/奖品/金额…"></div>
+      <div class="toolbar"><input id="searchDetail" class="search" type="text" placeholder="🔍 查找 姓名/手机号/工号/奖品/金额…">
+        <span class="muted">点击 基地/姓名/工号/出单手机号/奖品 单元格可直接修改;❌ fail 把该行退回无效名单</span></div>
       <div id="previewDetail" class="preview scroll"></div>
     </div>
     <div id="t-invalid" class="tabpane">
       <div class="toolbar"><input id="searchInvalid" class="search" type="text" placeholder="🔍 查找 姓名/手机号/奖品/原因…">
-        <span class="muted">行内按钮:✅ 通过 直接把这一行转入中奖名单 · ✏️ 修改 信息后重新匹配 · 点击"无效原因"单元格可直接改写</span></div>
+        <span class="muted">✅ 通过 直接转入中奖名单 · 🕓 待审核 话术表审核结果填「待审核通过补发」 · ✏️ 修改 后重新匹配 · 点击"无效原因"可直接改写</span></div>
       <div id="previewInvalid" class="preview scroll"></div>
     </div>
     <div id="t-comm" class="tabpane"><div id="previewComm" class="preview scroll"></div></div>
@@ -136,8 +137,7 @@
     <div class="modal-body">
       <div class="exp-list">
         <label><input type="checkbox" class="exp-item" value="pools" checked> <span id="expPoolsLabel">第N期有效订单池.xlsx(强基+升学两个子表)</span></label>
-        <label><input type="checkbox" class="exp-item" value="audit" checked> <span id="expAuditLabel">第N期中奖名单审核结果.xlsx(5 个子表)</span></label>
-        <label><input type="checkbox" class="exp-item" value="prize" checked> <span id="expPrizeLabel">第N期奖品底表.xlsx(奖池/奖项等级/奖品/份数/用户id)</span></label>
+        <label><input type="checkbox" class="exp-item" value="audit" checked> <span id="expAuditLabel">第N期中奖名单审核结果.xlsx(4 个子表)</span></label>
       </div>
       <div class="exp-actions">
         <button class="btn plain" id="expAll">全选</button>
