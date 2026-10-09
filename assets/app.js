@@ -73,32 +73,64 @@
 
   // ---------- 读取 / 识别 ----------
   // 一个文件识别为一个角色(4 文件流程: 2 订单池 + 2 问卷):
-  //  订单池文件 → qjRaw / sxRaw
-  //  问卷文件 → jjForm / dfForm(取"表单填写"表;发放情况表不再需要,问卷表单已含基地/姓名/手机号等审核所需信息)
-  function classifySheets(sheets, name) {
-    var out = {};
-    var orderRows = null;
-    var distFound = false;
-    sheets.forEach(function (sh) {
-      var hh = [];
-      (sh.rows[0] || []).concat(sh.rows[1] || []).forEach(function (x) { hh.push(String(x || '').trim()); });
-      var j = hh.join(',');
-      if (!orderRows && (j.indexOf('账号ID') >= 0 || j.indexOf('订单ID') >= 0)) {
-        orderRows = sh.rows;
-        return;
+  //  订单池文件 → qjRaw / sxRaw;问卷文件 → jjForm / dfForm
+  // 识别与列定位统一走 AuditCore 的列映射层(不再写死列下标)
+  var SLOT_KIND = {qjRaw: 'order', sxRaw: 'order', jjForm: 'form', dfForm: 'form'};
+  var SLOT_LABEL = {qjRaw: '强基订单池', sxRaw: '升学订单池', jjForm: '进阶奖池问卷', dfForm: '巅峰奖池问卷'};
+  var COLMAP_KEY = 'raffle_colmap_v1';
+
+  function loadColMap() {
+    try { return JSON.parse(localStorage.getItem(COLMAP_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveColMap(m) {
+    try { localStorage.setItem(COLMAP_KEY, JSON.stringify(m || {})); } catch (e) {}
+  }
+  // 各槽位的列映射复核(带手动覆盖):供「列映射确认」面板与审核前日志
+  function inspectSlot(slotKey, fd) {
+    var f = fd || files[slotKey];
+    if (!f) return null;
+    var ov = loadColMap()[slotKey] || null;
+    return {info: AuditCore.inspectSheet(f.rows, SLOT_KIND[slotKey], ov), name: f.name};
+  }
+  function logColumnReport(r) {
+    if (!r || !r.columns) return;
+    [['强基订单池', r.columns.qj], ['升学订单池', r.columns.sx],
+     ['进阶奖池问卷', r.columns.jjForm], ['巅峰奖池问卷', r.columns.dfForm]].forEach(function (x) {
+      var info = x[1] || {};
+      if (info.warnings && info.warnings.length) {
+        info.warnings.forEach(function (w) { log('列映射警告(' + x[0] + '): ' + w, 'err'); });
       }
-      if (j.indexOf('用户昵称') >= 0) {
-        out[name.indexOf('巅峰') >= 0 ? 'dfForm' : 'jjForm'] = sh.rows;
-      } else if (j.indexOf('奖项名称') >= 0 || j.indexOf('中奖者昵称') >= 0 ||
-                 /[一二三四五六七八九十]等奖[：:、\s].*?×/.test(j)) {
-        distFound = true;
+      if (info.missing && info.missing.length) {
+        info.missing.forEach(function (m) { log('列映射: ' + x[0] + ' 未匹配到可选列「' + m + '」,已按回退逻辑处理', 'err'); });
       }
     });
-    if (orderRows) {
-      if (name.indexOf('强基') >= 0) out.qjRaw = orderRows;
-      else if (name.indexOf('升学') >= 0) out.sxRaw = orderRows;
-      else out[(orderRows[0] || []).length > 20 ? 'sxRaw' : 'qjRaw'] = orderRows;
-    }
+  }
+
+  function classifySheets(sheets, name) {
+    var best = {}, distFound = false;
+    sheets.forEach(function (sh) {
+      var sn = sh.sn || '';
+      var hinted = null;
+      if (sn.indexOf('表单填写') >= 0) hinted = 'form';
+      else if (sn.indexOf('发放情况') >= 0) hinted = 'dist';
+      var kind = hinted || (window.AuditCore ? AuditCore.guessKind(sh.rows) : null);
+      if (!kind) return;
+      if (kind === 'dist') { distFound = true; return; }   // 发放表不再参与审核
+      var info = AuditCore.inspectSheet(sh.rows, kind);
+      var matched = (info.fields || []).filter(function (f) { return f.matched; }).length;
+      var score = matched * 2 + (hinted ? 5 : 0) - (info.missingRequired || []).length * 3;
+      var slot;
+      if (kind === 'order') {
+        if (name.indexOf('强基') >= 0) slot = 'qjRaw';
+        else if (name.indexOf('升学') >= 0) slot = 'sxRaw';
+        else slot = (info.header || []).length > 20 ? 'sxRaw' : 'qjRaw';
+      } else {
+        slot = name.indexOf('巅峰') >= 0 ? 'dfForm' : 'jjForm';
+      }
+      if (!best[slot] || score > best[slot].score) best[slot] = {score: score, rows: sh.rows, info: info};
+    });
+    var out = {};
+    Object.keys(best).forEach(function (k) { out[k] = {rows: best[k].rows, info: best[k].info, score: best[k].score}; });
     return {roles: out, distFound: distFound};
   }
 
@@ -127,7 +159,15 @@
             ? '只找到"发放情况"表(4 文件流程不需要该表),未找到"表单填写"表'
             : '未找到"表单填写"表(需含"用户昵称"表头)或订单池表(需含"账号ID/订单ID"表头)'), 'err');
         }
-        Object.keys(roles).forEach(function (k) { files[k] = {name: f.name, rows: roles[k]}; });
+        Object.keys(roles).forEach(function (k) {
+          // 同一槽位已有更高分候选时不被覆盖(避免汇总/透视表顶掉真正的订单池或问卷)
+          var cur = files[k];
+          if (cur && cur.score != null && roles[k].score < cur.score) {
+            log('跳过: ' + f.name + ' 的表被识别为「' + SLOT_LABEL[k] + '」但置信度低于已选文件,已忽略');
+            return;
+          }
+          files[k] = {name: f.name, rows: roles[k].rows, info: roles[k].info, score: roles[k].score};
+        });
       } catch (e) {
         log('读取失败: ' + f.name + ' — ' + e.message, 'err');
       }
@@ -192,9 +232,63 @@
     log('完成:有效 ' + lastResult.stats.valid + '(进阶' + lastResult.stats.validJJ + '/巅峰' + lastResult.stats.validDF +
         '),无效 ' + lastResult.stats.invalid + ',重复剔除 ' + lastResult.stats.duplicates +
         ';有效订单 强基' + lastResult.validPools['强基'].stats.kept + '/升学' + lastResult.validPools['升学'].stats.kept + tInfo, 'ok');
+    logColumnReport(lastResult);
     renderAll(lastResult);
     document.getElementById('results').style.display = 'block';
     saveHistory();
+  }
+
+  // ---------- 列映射确认面板(点「开始审核」前展示,可手动指定并记住) ----------
+  function openColumnPanel() {
+    var missing = SLOTS.filter(function (s) { return !files[s.key]; }).map(function (s) { return s.label; });
+    if (missing.length) { alert('还缺少文件:\n' + missing.join('\n')); return; }
+    var h = [];
+    SLOTS.forEach(function (slot) {
+      var insp = inspectSlot(slot.key);
+      if (!insp) return;
+      var info = insp.info;
+      var okReq = (info.missingRequired || []).length === 0;
+      h.push('<div class="cm-sec"><div class="cm-sec-head">' + esc(SLOT_LABEL[slot.key]) +
+        ' <span class="muted">' + esc(insp.name || '') + ' · 表头行:第 ' + ((info.headerIdx == null ? 0 : info.headerIdx) + 1) + ' 行</span>'
+        + (okReq ? '<span class="cm-ok">必需列全部匹配</span>' : '<span class="cm-bad">必需列缺失</span>') + '</div>');
+      if (info.warnings && info.warnings.length) {
+        h.push('<div class="cm-warn">⚠ ' + info.warnings.map(esc).join('<br>⚠ ') + '</div>');
+      }
+      h.push('<table class="grid"><tr><th>字段</th><th>匹配到的列(可手动指定)</th><th>状态</th></tr>');
+      (info.fields || []).forEach(function (f) {
+        var opts = '<option value="">(未匹配)</option>' + (info.header || []).map(function (ht, i) {
+          var sel = (f.matched && f.col === i) ? ' selected' : '';
+          return '<option value="' + esc(ht) + '"' + sel + '>第' + (i + 1) + '列: ' + esc(ht || '(空)') + '</option>';
+        }).join('');
+        var st = f.matched
+          ? (f.byExact ? '✅ 完全匹配' : '✅ 包含匹配') + (f.manual ? ' · 手动' : '')
+          : (f.required ? '❌ 必需列缺失' : '⚠️ 未匹配(可选,走回退)');
+        h.push('<tr><td>' + esc(f.label) + (f.required ? ' <b class="cm-req">必填</b>' : '') + '</td>'
+          + '<td><select class="cm-sel" data-slot="' + slot.key + '" data-field="' + f.field + '">' + opts + '</select></td>'
+          + '<td class="' + (f.required && !f.matched ? 'reason' : '') + '">' + st + '</td></tr>');
+      });
+      h.push('</table></div>');
+    });
+    document.getElementById('cmBody').innerHTML = h.join('');
+    document.getElementById('colMapModal').style.display = 'flex';
+  }
+  function confirmColumnPanel() {
+    var m = {};
+    Array.prototype.forEach.call(document.querySelectorAll('#cmBody .cm-sel'), function (sel) {
+      var val = sel.value;
+      if (!val) return;
+      var slot = sel.getAttribute('data-slot');
+      (m[slot] = m[slot] || {})[sel.getAttribute('data-field')] = val;
+    });
+    saveColMap(m);
+    document.getElementById('colMapModal').style.display = 'none';
+    log('列映射已确认(手动指定项已记住,下次自动复用)');
+    run();
+  }
+  function resetColumnPanel() {
+    saveColMap({});
+    log('已清除手动列映射,恢复自动识别');
+    openColumnPanel();
   }
 
   function renderStats(r) {
@@ -315,22 +409,27 @@
   function showPoolOrder(poolName) {
     var r = lastResult;
     var pool = r.validPools[poolName];
+    var m = pool.map || {};
     var lu = buildPrizeLookup();
+    function cell(rr, key) { return m[key] == null ? '' : (rr[m[key]] || ''); }
     // 出单手机号:按掩码从问卷(全部提交记录)反查全号,查不到则显示订单池掩码号
     var phoneFull = {};
     (r.validList || []).concat(r.invalidList || []).concat(r.duplicates || []).forEach(function (s) {
       if (!s.phone) return;
-      var m = AuditCore.maskPhone(s.phone);
-      if (!phoneFull[m]) phoneFull[m] = s.phone;
+      var mk = AuditCore.maskPhone(s.phone);
+      if (!phoneFull[mk]) phoneFull[mk] = s.phone;
     });
     var cols = ['基地','姓名','工号','出单手机号','奖品','业绩归属渠道','业绩归属时间','订单转化金额','异常情况说明（如有）'];
     var rows = pool.kept.map(function (rr) {
       // 奖品在进阶/巅峰两个奖池问卷中按掩码手机号(优先)/真实姓名查找
-      var masked = AuditCore.maskPhone(String(rr[2] || '').trim());
-      var prize = lookupPrize(lu, masked, String(rr[1] || '').trim());
+      var masked = AuditCore.maskPhone(String(cell(rr, 'masked')).trim());
+      var prize = lookupPrize(lu, masked, String(cell(rr, 'cust_name')).trim());
+      // 业绩归属时间:无该列时回退支付时间
+      var perf = (m.perf_time == null ? cell(rr, 'pay_time') : cell(rr, 'perf_time')) || cell(rr, 'pay_time');
       // 列序: 基地/姓名/工号/出单手机号/奖品/业绩归属渠道/业绩归属时间/订单转化金额/异常情况说明
-      return [baseFromOrg(rr[26]), rr[1] || '', rr[25] || '', phoneFull[masked] || rr[2] || '',
-              prize, cleanChannel(rr[20]), rr[7] || rr[5] || '', AuditCore.fmtMoney(rr[4]), ''];
+      return [baseFromOrg(cell(rr, 'org')), cell(rr, 'cust_name'), cell(rr, 'gonghao'),
+              phoneFull[masked] || cell(rr, 'masked'), prize, cleanChannel(cell(rr, 'channel')),
+              perf, AuditCore.fmtMoney(cell(rr, 'amount')), ''];
     });
     openDetailModal(poolName + '有效订单池（' + rows.length + ' 条，仅销售直推渠道）', rows, cols);
   }
@@ -671,6 +770,7 @@
       rawOrders: {qiangji: files.qjRaw.rows, shengxue: files.sxRaw.rows},
       distribution: {'进阶': [], '巅峰': []},
       questionnaire: {'进阶': files.jjForm.rows, '巅峰': files.dfForm.rows},
+      columnOverrides: loadColMap(),
       params: {
         channelPrefix: document.getElementById('prefix').value.trim() || 'grow_xcg_zhuanjs_xiaoshou',
         minAmount: parseFloat(document.getElementById('minAmount').value) || 999,
@@ -1361,7 +1461,15 @@
       handleFiles(e.dataTransfer.files);
     });
     zone.addEventListener('click', function () { input.click(); });
-    document.getElementById('btnRun').addEventListener('click', run);
+    document.getElementById('btnRun').addEventListener('click', openColumnPanel);
+    document.getElementById('cmConfirm').addEventListener('click', confirmColumnPanel);
+    document.getElementById('cmReset').addEventListener('click', resetColumnPanel);
+    document.getElementById('cmCancel').addEventListener('click', function () {
+      document.getElementById('colMapModal').style.display = 'none';
+    });
+    document.getElementById('colMapModal').addEventListener('click', function (e) {
+      if (e.target === this) this.style.display = 'none';
+    });
     document.getElementById('btnDownload').addEventListener('click', openExportModal);
     // 详情弹窗:关闭按钮 + 点击遮罩关闭
     document.getElementById('modalClose').addEventListener('click', closeDetailModal);
@@ -1564,6 +1672,13 @@
       setGreenCodes: function (arr) { saveGreenCodes(arr || []); },
       getGreenCodes: loadGreenCodes,
       genGreenCode: genGreenCode,
+      openColumnPanel: openColumnPanel,
+      confirmColumnPanel: confirmColumnPanel,
+      resetColumnPanel: resetColumnPanel,
+      getColMap: loadColMap,
+      setColMap: saveColMap,
+      inspectSlot: inspectSlot,
+      logColumnReport: logColumnReport,
       failToInvalid: failToInvalid,
       markPendingReview: markPendingReview,
       updateHistItem: updateHistItem,

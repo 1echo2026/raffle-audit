@@ -127,6 +127,22 @@
   </div>
 </div>
 
+<!-- 列映射确认弹窗 -->
+<div id="colMapModal" class="modal-mask" style="display:none">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>🔧 列映射确认(自动识别结果,可手动指定)</span>
+      <button type="button" id="cmCancel" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="cmBody"></div>
+    <div class="cm-foot">
+      <span class="muted">手动指定的列会记住,下次自动复用;「恢复自动识别」可清除。</span>
+      <button type="button" class="btn plain" id="cmReset">↺ 恢复自动识别</button>
+      <button type="button" class="btn primary" id="cmConfirm">✓ 确认并开始审核</button>
+    </div>
+  </div>
+</div>
+
 <!-- 导出选择弹窗 -->
 <div id="exportModal" class="modal-mask" style="display:none">
   <div class="modal-box modal-narrow">

@@ -11,6 +11,9 @@
  *  5) 中奖手机号关联订单归哪个池,本次抽奖就必须在哪个池
  *  6) 渠道异常归类: 匹配到的订单全部非销售直推渠道时,渠道前缀为
  *     grow_xcg_zhuanjs_fudao 的按"非销售直推"处理,其它渠道按"非转介绍"处理
+ *
+ * 列映射层(2026-10 改造): 所有读列都经 resolveColumnMap 解析表头别名得到列下标,
+ * 不再使用写死的数字下标;必填列缺失时抛出带字段名的错误并中止。
  */
 (function (global) {
   'use strict';
@@ -18,6 +21,7 @@
   var CN_NUM = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8};
   var NUM_CN = {1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八'};
   var formSeq = 0;  // 提交记录的稳定编号(进阶问卷在前),跨重新审核保持一致,供前端绿色通道/修改定位
+  var HEADER_SCAN = 10;  // 表头行扫描范围(前 10 行)
 
   function str(v) {
     if (v === null || v === undefined) return '';
@@ -76,46 +80,259 @@
     return {level: lv, name: name || s};
   }
 
-  // ---------- 读取结构(输入均为二维数组) ----------
-  function loadDistribution(rows) {
-    var map = {};
+  // ==================== 列映射 ====================
+  // 表头归一化:去所有空白、去全角/半角括号与标点、转小写
+  function normHeader(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/[\s\u3000\u00a0]+/g, '')
+      .replace(/[（）()【】\[\]〈〉《》「」『』{}〔〕]/g, '')
+      .replace(/[:：、,，.。;；/／\\|｜\-—－_~～*＊'‘’"“”!！?？+＋=＝#＃$＄%％&＆@＠^＾`·•●○◎※×√°\u2022]/g, '')
+      .toLowerCase();
+  }
+
+  // 可扩展别名表(前 10 行内按此识别表头;完全相等优先,其次包含)
+  var SCHEMAS = {
+    // 订单池导出
+    order: [
+      {field: 'account', label: '账号ID', required: true, aliases: ['账号ID', '账号']},
+      {field: 'cust_name', label: '真实姓名', required: true, aliases: ['真实姓名', '客户姓名', '学员姓名', '姓名']},
+      {field: 'masked', label: '加密手机号', required: true, aliases: ['加密手机号', '联系方式', '手机号(掩码)', '手机号（掩码）', '掩码手机号']},
+      {field: 'order_id', label: '订单ID', required: true, aliases: ['订单ID', '订单号']},
+      {field: 'amount', label: '订单金额', required: true, aliases: ['订单金额', '实付金额', '支付金额', '金额']},
+      {field: 'pay_time', label: '支付时间', required: true, aliases: ['支付时间', '付款时间', '下单时间']},
+      {field: 'status', label: '订单状态', required: false, aliases: ['订单状态', '状态']},
+      {field: 'perf_time', label: '业绩归属时间', required: false, aliases: ['业绩归属时间']},
+      {field: 'product_id', label: '商品ID', required: false, aliases: ['商品ID', '商品编号', '产品ID']},
+      {field: 'channel', label: '渠道', required: true, aliases: ['订单归属渠道', '渠道', '渠道前缀', '来源渠道']},
+      {field: 'sales_name', label: '销售姓名', required: false, aliases: ['订单归属人姓名', '销售姓名', '销售', '顾问姓名']},
+      {field: 'gonghao', label: '工号', required: true, aliases: ['订单归属人工号', '工号', '销售工号', '员工工号', '员工编号']},
+      {field: 'org', label: '订单归属组织架构', required: false, aliases: ['订单归属组织架构', '组织架构']}
+    ],
+    // 抽奖助手 表单填写(问卷)
+    form: [
+      {field: 'nickname', label: '用户昵称', required: false, aliases: ['用户昵称', '昵称']},
+      {field: 'avatar', label: '用户头像', required: false, aliases: ['用户头像', '头像', '头像图片']},
+      {field: 'prize', label: '所中奖项', required: true, aliases: ['所中奖项', '中奖奖品', '奖品', '奖项']},
+      {field: 'submit_time', label: '提交时间', required: true, aliases: ['提交时间', '填写时间']},
+      {field: 'base', label: '基地', required: false, aliases: ['您的真实基地', '真实基地', '基地', '所属基地']},
+      {field: 'real_name', label: '真实姓名', required: true, aliases: ['您的真实名字', '真实名字', '真实姓名', '姓名']},
+      {field: 'phone', label: '出单手机号', required: true, aliases: ['出单用户手机号/ID', '出单用户手机号', '出单手机号', '手机号']}
+    ],
+    // 中奖名单 奖品发放情况(发放表,当前不参与判定,仅用于识别/兼容)
+    dist: [
+      {field: 'prize_name', label: '奖项名称', required: false, aliases: ['奖项名称', '奖品名称']},
+      {field: 'nickname', label: '中奖者昵称', required: false, aliases: ['中奖者昵称', '用户昵称', '昵称']},
+      {field: 'avatar', label: '中奖者头像', required: false, aliases: ['中奖者头像', '商品链接', '链接', '奖品图片']},
+      {field: 'redeem', label: '核销情况', required: false, aliases: ['核销情况', '兑换码', '备注', '核销码']}
+    ]
+  };
+
+  function fieldLabel(def) { return def.label || def.field; }
+  function findDef(schema, field) {
+    for (var i = 0; i < schema.length; i++) if (schema[i].field === field) return schema[i];
+    return null;
+  }
+  function findDefByLabel(schema, label) {
+    var n = normHeader(label);
+    for (var i = 0; i < schema.length; i++) {
+      if (normHeader(fieldLabel(schema[i])) === n) return schema[i];
+    }
+    return null;
+  }
+
+  /**
+   * 解析表头 → 字段列映射
+   * @param {Array} headerRow 表头行(一维数组)
+   * @param {Array} schema [{field, label, aliases:[], required}]
+   * @returns {{map, missing:[], missingRequired:[], warnings:[], fields:[], header:[]}}
+   * 规则:归一化后逐字段按别名优先级做「完全相等」优先,其次「包含」;
+   *      两个字段命中同一列时按字段定义顺序优先(先到先得)并记 warning。
+   */
+  function resolveColumnMap(headerRow, schema) {
+    schema = schema || [];
+    var heads = [];
+    (headerRow || []).forEach(function (v) { heads.push(str(v)); });
+    var norm = heads.map(normHeader);
+    var claimed = {};     // colIndex -> field
+    var map = {}, missing = [], warnings = [], fields = [];
+
+    schema.forEach(function (def) {
+      var col = -1, byExact = false, conflicts = [];
+      function scan(useExact) {
+        for (var a = 0; a < def.aliases.length && col < 0; a++) {
+          var na = normHeader(def.aliases[a]);
+          if (!na) continue;
+          for (var c = 0; c < norm.length; c++) {
+            if (!norm[c]) continue;
+            var hit = useExact ? (norm[c] === na) : (norm[c].indexOf(na) >= 0);
+            if (!hit) continue;
+            if (claimed[c]) { if (conflicts.indexOf(c) < 0) conflicts.push(c); continue; }
+            col = c;
+            byExact = !!useExact;
+            return;
+          }
+        }
+      }
+      scan(true);
+      if (col < 0) scan(false);
+
+      if (col >= 0) { claimed[col] = def.field; map[def.field] = col; }
+      else missing.push(fieldLabel(def));
+
+      conflicts.forEach(function (c) {
+        var owner = findDef(schema, claimed[c]);
+        warnings.push('列「' + (heads[c] || ('第' + (c + 1) + '列')) + '」同时匹配「' +
+          fieldLabel(def) + '」与「' + (owner ? fieldLabel(owner) : claimed[c]) +
+          '」,按字段定义顺序优先归给「' + (owner ? fieldLabel(owner) : claimed[c]) + '」');
+      });
+
+      fields.push({
+        field: def.field, label: fieldLabel(def), required: !!def.required,
+        col: col < 0 ? null : col, headerText: col < 0 ? '' : heads[col],
+        matched: col >= 0, byExact: byExact, conflictCols: conflicts
+      });
+    });
+
+    var missingRequired = fields.filter(function (f) { return f.required && !f.matched; })
+      .map(function (f) { return f.label; });
+    return {map: map, missing: missing, missingRequired: missingRequired,
+            warnings: warnings, fields: fields, header: heads};
+  }
+
+  // 在前 10 行内找表头行:命中任一关键(必填)字段别名即视为候选;无必填字段的表(如发放表)要求至少命中 2 个字段
+  function findHeaderRow(rows, schema) {
+    var best = -1, bestScore = -1, bestInfo = null;
+    var limit = Math.min(rows.length || 0, HEADER_SCAN);
+    for (var i = 0; i < limit; i++) {
+      var info = resolveColumnMap(rows[i] || [], schema);
+      var matched = info.fields.filter(function (f) { return f.matched; }).length;
+      var reqHit = info.fields.filter(function (f) { return f.required && f.matched; }).length;
+      if (reqHit <= 0 && matched < 2) continue;   // 既没命中关键字段、命中又太少 → 不是表头行
+      var score = matched * 10 + reqHit;          // 命中越多越像表头行
+      if (score > bestScore) { bestScore = score; best = i; bestInfo = info; }
+    }
+    return best < 0 ? null : {idx: best, info: bestInfo};
+  }
+
+  /**
+   * 识别并解析一张工作表
+   * @param {Array} rows 工作表二维数组
+   * @param {String} kind 'order' | 'form' | 'dist'
+   * @param {Object} [overrides] {field: 表头文字} 手动指定的列(按表头文字定位)
+   */
+  function inspectSheet(rows, kind, overrides) {
+    var schema = SCHEMAS[kind] || [];
+    var found = findHeaderRow(rows, schema);
+    if (!found) {
+      return {
+        kind: kind, headerIdx: null, header: [], title: [], startRow: 1, map: {},
+        missing: schema.map(fieldLabel),
+        missingRequired: schema.filter(function (d) { return d.required; }).map(fieldLabel),
+        warnings: ['未在前 ' + HEADER_SCAN + ' 行内找到表头行(未命中任何关键字段别名)'],
+        fields: [], ok: false
+      };
+    }
+    var info = found.info;
+    info.kind = kind;
+    info.headerIdx = found.idx;
+    info.header = info.header || [];
+    info.title = found.idx > 0 ? (rows[found.idx - 1] || []) : [];
+    info.startRow = found.idx + 1;
+
+    if (overrides) {
+      Object.keys(overrides).forEach(function (f) {
+        var want = str(overrides[f]);
+        if (!want) return;
+        var nw = normHeader(want);
+        var hit = -1;
+        info.header.forEach(function (h, i) { if (hit < 0 && normHeader(h) === nw) hit = i; });
+        if (hit < 0) {
+          info.warnings.push('手动指定的列「' + want + '」在此表头中找不到,已忽略');
+          return;
+        }
+        info.map[f] = hit;
+        info.fields.forEach(function (fd) {
+          if (fd.field !== f) return;
+          fd.col = hit; fd.headerText = info.header[hit]; fd.matched = true; fd.manual = true;
+        });
+      });
+      info.missing = info.fields.filter(function (fd) { return !fd.matched; }).map(fieldLabel);
+      info.missingRequired = info.fields.filter(function (fd) { return fd.required && !fd.matched; }).map(fieldLabel);
+    }
+    info.ok = info.missingRequired.length === 0;
+    return info;
+  }
+
+  // 内容识别:命中账号ID/订单ID→订单池;命中用户昵称+提交时间→问卷;命中奖项名称/中奖者昵称→发放表
+  function guessKind(rows) {
+    function hits(kind) {
+      var found = findHeaderRow(rows, SCHEMAS[kind]);
+      var h = {};
+      if (found) found.info.fields.forEach(function (fd) { if (fd.matched) h[fd.field] = 1; });
+      return h;
+    }
+    var ho = hits('order'), hf = hits('form'), hd = hits('dist');
+    if (ho.account || ho.order_id) return 'order';
+    if (hf.nickname && hf.submit_time) return 'form';
+    if (hd.prize_name || hd.nickname) return 'dist';
+    // 弱证据兜底(严格阈值,避免透视/汇总表被误判成订单池或问卷)
+    var so = Object.keys(ho).length, sf = Object.keys(hf).length, sd = Object.keys(hd).length;
+    if (so >= 4) return 'order';
+    if (sf >= 4) return 'form';
+    if (sd >= 2) return 'dist';
+    return null;
+  }
+
+  // ==================== 读取结构(输入均为二维数组) ====================
+  function loadDistribution(rows, info) {
+    var map = (info && info.map) || {};
+    var iPz = map.prize_name != null ? map.prize_name : 0;
+    var iNk = map.nickname, iAv = map.avatar, iRd = map.redeem;
+    var out = {};
     var curLevel = null;
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i] || [];
-      var c0 = str(row[0]);
+      var c0 = str(row[iPz]);
       var m = c0.match(/^([一二三四五六七八九十]+)等奖[：:]/);
       if (m && c0.indexOf('×') >= 0) { curLevel = CN_NUM[m[1]]; continue; }
-      if (c0 === '奖项名称') continue;
-      if (row[1] && row[2] && str(row[2]).indexOf('http') === 0) {
-        map[str(row[2])] = {
+      if (c0 === '奖项名称' || c0 === '奖品名称') continue;
+      if (iNk == null || iAv == null) continue;
+      if (row[iNk] && row[iAv] && str(row[iAv]).indexOf('http') === 0) {
+        out[str(row[iAv])] = {
           level: curLevel,
           prize_name: c0,
-          nickname: str(row[1]),
-          redeem: str(row[3])
+          nickname: str(row[iNk]),
+          redeem: iRd == null ? '' : str(row[iRd])
         };
       }
     }
-    return map;
+    return out;
   }
 
-  function loadQuestionnaire(rows, pool) {
+  function loadQuestionnaire(rows, pool, info) {
+    var map = (info && info.map) || {};
+    var start = (info && info.startRow) || 1;
+    var iNk = map.nickname, iAv = map.avatar, iPz = map.prize, iSt = map.submit_time,
+        iBs = map.base, iNm = map.real_name, iPh = map.phone;
     var out = [];
-    for (var i = 1; i < rows.length; i++) {
+    for (var i = start; i < rows.length; i++) {
       var row = rows[i] || [];
-      if (!row[6]) continue;
-      var pp = parsePrizeText(row[2]);
-      var cp = cleanPhone(row[6]);
-      var dt = parseDt(row[3]);
+      var rawPhone = iPh == null ? '' : row[iPh];
+      if (!rawPhone) continue;
+      var pp = parsePrizeText(iPz == null ? '' : row[iPz]);
+      var cp = cleanPhone(rawPhone);
+      var rawSubmit = iSt == null ? '' : row[iSt];
+      var dt = parseDt(rawSubmit);
       out.push({
         pool: pool,
-        nickname: str(row[0]),
-        avatar: str(row[1]),
+        nickname: iNk == null ? '' : str(row[iNk]),
+        avatar: iAv == null ? '' : str(row[iAv]),
         prize_level: pp.level,
         prize_name: pp.name,
-        submit_time_raw: dt ? fmtDt(dt) : str(row[3]),
+        submit_time_raw: dt ? fmtDt(dt) : str(rawSubmit),
         submit_dt: dt,
-        base: str(row[4]),
-        real_name: str(row[5]),
+        base: iBs == null ? '' : str(row[iBs]),
+        real_name: iNm == null ? '' : str(row[iNm]),
         phone: cp.phone,
         phone_format_ok: cp.ok,
         form_i: formSeq++,
@@ -148,6 +365,7 @@
   // ---------- 主流程 ----------
   function audit(input) {
     var params = input.params || {};
+    var overrides = input.columnOverrides || {};
     formSeq = 0;
     var PREFIX = params.channelPrefix || 'grow_xcg_zhuanjs_xiaoshou';
     var MIN_AMT = toFloat(params.minAmount != null ? params.minAmount : 999);
@@ -171,61 +389,72 @@
       return true;
     }
 
-    // 1) 过滤有效订单(含支付时间范围)
-    function filterPool(rows) {
-      var title = rows[0] || [];
-      var header = rows[1] || [];
-      // 动态查找表头行: 强基文件行0即表头(账号ID/真实姓名...),升学文件行1为表头
-      var start = 2;
-      for (var k = 0; k < Math.min(rows.length, 3); k++) {
-        var rr = rows[k] || [];
-        if (str(rr[0]) === '账号ID' || str(rr[1]) === '真实姓名') {
-          header = rr;
-          title = k > 0 ? (rows[k - 1] || []) : [];   // 表头在第0行时没有标题行,留空避免导出重复表头
-          start = k + 1;
-          break;
+    // 0) 列映射(表头别名解析 + 手动覆盖),必填列缺失直接报错中止
+    var colQj = inspectSheet(input.rawOrders.qiangji || [], 'order', overrides.qjRaw);
+    var colSx = inspectSheet(input.rawOrders.shengxue || [], 'order', overrides.sxRaw);
+    var colJJ = inspectSheet(input.questionnaire['进阶'] || [], 'form', overrides.jjForm);
+    var colDF = inspectSheet(input.questionnaire['巅峰'] || [], 'form', overrides.dfForm);
+    var colDistJJ = inspectSheet(input.distribution['进阶'] || [], 'dist', null);
+    var colDistDF = inspectSheet(input.distribution['巅峰'] || [], 'dist', null);
+    var colProblems = [];
+    [['强基订单池', colQj], ['升学订单池', colSx], ['进阶奖池问卷', colJJ], ['巅峰奖池问卷', colDF]]
+      .forEach(function (x) {
+        if (x[1].missingRequired.length) {
+          colProblems.push(x[0] + ' 缺少必需列:' + x[1].missingRequired.join('、'));
         }
-      }
-      // 匹配池保留全部渠道(渠道差异在资格判定阶段归类为异常)
-      var kept = [], rejAmt = 0, rejTime = 0;
-      for (var i = start; i < rows.length; i++) {
-        var r = rows[i];
-        if (!r || !r[0]) continue;
-        var amt = toFloat(r[4]);
-        if (amt < MIN_AMT) { rejAmt++; continue; }
-        if (!inRange(parseDt(r[5]), ORDER_START, ORDER_END)) { rejTime++; continue; }
-        kept.push(r);
-      }
-      return {title: title, header: header, kept: kept, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejAmt + rejTime};
+      });
+    if (colProblems.length) {
+      throw new Error('列映射失败,无法读取数据 — ' + colProblems.join(';') +
+        '。请检查表头名称,或在上传后用「列映射确认」手动指定对应列。');
     }
 
-    var fQj = filterPool(input.rawOrders.qiangji || []);
-    var fSx = filterPool(input.rawOrders.shengxue || []);
+    // 1) 过滤有效订单(含支付时间范围)
+    function filterPool(rows, info) {
+      var m = info.map;
+      var iAcct = m.account, iAmt = m.amount, iPay = m.pay_time;
+      // 匹配池保留全部渠道(渠道差异在资格判定阶段归类为异常)
+      var kept = [], rejAmt = 0, rejTime = 0;
+      for (var i = info.startRow; i < rows.length; i++) {
+        var r = rows[i];
+        if (!r || !r[iAcct]) continue;
+        var amt = toFloat(r[iAmt]);
+        if (amt < MIN_AMT) { rejAmt++; continue; }
+        if (!inRange(parseDt(r[iPay]), ORDER_START, ORDER_END)) { rejTime++; continue; }
+        kept.push(r);
+      }
+      return {title: info.title || [], header: info.header || [], map: m, info: info,
+              kept: kept, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejAmt + rejTime};
+    }
 
-    function toRec(r, source) {
+    var fQj = filterPool(input.rawOrders.qiangji || [], colQj);
+    var fSx = filterPool(input.rawOrders.shengxue || [], colSx);
+
+    function toRec(r, source, m) {
       return {
         source: source,
-        account: str(r[0]),
-        cust_name: str(r[1]),
-        masked: str(r[2]),
-        order_id: str(r[3]),
-        amount: toFloat(r[4]),
-        pay_time: str(r[5]),
-        dt: parseDt(r[5]),
-        perf_time: str(r[7]),
-        perf_dt: parseDt(r[7]),
-        status: str(r[6]),
-        product_id: str(r[10]),
-        sales_name: str(r[24]),
-        gonghao: str(r[25]),
-        channel: str(r[20])
+        account: str(r[m.account]),
+        cust_name: str(r[m.cust_name]),
+        masked: str(r[m.masked]),
+        order_id: str(r[m.order_id]),
+        amount: toFloat(r[m.amount]),
+        pay_time: str(r[m.pay_time]),
+        dt: parseDt(r[m.pay_time]),
+        // 可选列缺失时回退:业绩归属时间缺失 → 用支付时间
+        perf_time: m.perf_time == null ? str(r[m.pay_time]) : str(r[m.perf_time]),
+        perf_dt: m.perf_time == null ? parseDt(r[m.pay_time]) : parseDt(r[m.perf_time]),
+        status: m.status == null ? '' : str(r[m.status]),
+        product_id: m.product_id == null ? '' : str(r[m.product_id]),
+        sales_name: m.sales_name == null ? '' : str(r[m.sales_name]),
+        gonghao: str(r[m.gonghao]),
+        channel: str(r[m.channel]),
+        org: m.org == null ? '' : str(r[m.org])
       };
     }
 
     // 匹配池: 全部渠道(≥999),用于匹配中奖名单;渠道差异在资格判定阶段归类为异常
     var allRows = [];
-    fQj.kept.forEach(function (r) { allRows.push(toRec(r, '强基')); });
-    fSx.kept.forEach(function (r) { allRows.push(toRec(r, '升学')); });
+    fQj.kept.forEach(function (r) { allRows.push(toRec(r, '强基', fQj.map)); });
+    fSx.kept.forEach(function (r) { allRows.push(toRec(r, '升学', fSx.map)); });
     // 有效订单: 仅销售直推渠道(grow_xcg_zhuanjs_xiaoshou),用于判池与工号累计
     function isXiaoshou(r) { return r.channel.indexOf(PREFIX) === 0; }
     var validRows = allRows.filter(isXiaoshou);
@@ -243,12 +472,12 @@
 
     // 2) 中奖名单 + 问卷
     var winners = {
-      '进阶': loadDistribution(input.distribution['进阶'] || []),
-      '巅峰': loadDistribution(input.distribution['巅峰'] || [])
+      '进阶': loadDistribution(input.distribution['进阶'] || [], colDistJJ),
+      '巅峰': loadDistribution(input.distribution['巅峰'] || [], colDistDF)
     };
     var submissions = []
-      .concat(loadQuestionnaire(input.questionnaire['进阶'] || [], '进阶'))
-      .concat(loadQuestionnaire(input.questionnaire['巅峰'] || [], '巅峰'));
+      .concat(loadQuestionnaire(input.questionnaire['进阶'] || [], '进阶', colJJ))
+      .concat(loadQuestionnaire(input.questionnaire['巅峰'] || [], '巅峰', colDF));
 
     // 3) 工号时间线 + 逐单判池
     var ghRowCnt = {}, ghNameVotes = {}, orderAgg = {};
@@ -364,7 +593,7 @@
       }
       s.order_time = '';
       rows.forEach(function (r) {
-        // 业绩归属时间取订单池"业绩归属时间"列(c7);无该列时回退支付时间(c5)
+        // 业绩归属时间取订单池"业绩归属时间"列;无该列时回退支付时间
         var t = r.perf_dt || r.dt;
         if (t && (!s.order_time || t > s.order_time)) s.order_time = t;
       });
@@ -434,6 +663,10 @@
 
     // 7) 资格判定
     var validList = [], invalidList = [];
+    var rawAll = [];
+    (input.rawOrders.qiangji || []).forEach(function (r) { rawAll.push([r, fQj.map]); });
+    (input.rawOrders.shengxue || []).forEach(function (r) { rawAll.push([r, fSx.map]); });
+
     submissions.forEach(function (s) {
       var reasons = [], remark = '';
       // 绿色通道:问卷"出单手机号/ID"栏填写绿色通道码 → 直接通过(跳过全部检查)
@@ -464,22 +697,24 @@
       } else if (!s.match) {
         var mp = maskPhone(s.phone);
         var rawRows = [];
-        (input.rawOrders.qiangji || []).concat(input.rawOrders.shengxue || []).forEach(function (r) {
-          if (r && str(r[2]) === mp) rawRows.push(r);
+        rawAll.forEach(function (x) {
+          var m = x[1];
+          if (m.masked != null && str(x[0][m.masked]) === mp) rawRows.push([x[0], m]);
         });
         if (rawRows.length) {
           // 业绩归属时间(订单支付时间)是否在本期活动时间范围内;未配置时间范围时不限制
-          var inWin = rawRows.some(function (r) { return inRange(parseDt(r[5]), ORDER_START, ORDER_END); });
+          var inWin = rawRows.some(function (x) { return inRange(parseDt(x[0][x[1].pay_time]), ORDER_START, ORDER_END); });
           if (!inWin && (ORDER_START || ORDER_END)) {
-            var t0 = rawRows.map(function (r) { return parseDt(r[5]); })
+            var t0 = rawRows.map(function (x) { return parseDt(x[0][x[1].pay_time]); })
                             .filter(function (d) { return !!d; }).sort(function (a, b) { return a - b; })[0];
             s.order_time = t0 ? fmtDt(t0) : '';
             reasons.push('出单时间不符合当前抽奖日期（订单池匹配到的业绩归属时间' +
-              (s.order_time || str(rawRows[0][5]) || '未知') + '不在本期活动时间范围内）');
+              (s.order_time || str(rawRows[0][0][rawRows[0][1].pay_time]) || '未知') + '不在本期活动时间范围内）');
           } else {
             // 手机号在原始订单池能找到但未进入匹配池(未达≥999):要么金额不足,要么匹配到多个账号
-            var hasQualified = rawRows.some(function (r) {
-              return toFloat(r[4]) >= MIN_AMT && inRange(parseDt(r[5]), ORDER_START, ORDER_END);
+            var hasQualified = rawRows.some(function (x) {
+              return toFloat(x[0][x[1].amount]) >= MIN_AMT &&
+                     inRange(parseDt(x[0][x[1].pay_time]), ORDER_START, ORDER_END);
             });
             if (hasQualified) {
               reasons.push('未在有效订单池查找到（手机号在订单池匹配到多个账号的达标订单，无法唯一归属）');
@@ -594,17 +829,21 @@
     validList.forEach(function (s) { if (s.abnormal_status) communication.push(commBase(s)); });
 
     // 有效订单池导出仅保留销售直推渠道行
-    function xiaoKept(rows) { return rows.filter(function (r) { return str(r[20]).indexOf(PREFIX) === 0; }); }
-    var keptQj = xiaoKept(fQj.kept), keptSx = xiaoKept(fSx.kept);
+    function xiaoKept(rows, info) {
+      var iCh = info.map.channel;
+      return rows.filter(function (r) { return str(r[iCh]).indexOf(PREFIX) === 0; });
+    }
+    var keptQj = xiaoKept(fQj.kept, colQj), keptSx = xiaoKept(fSx.kept, colSx);
 
     return {
       params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD,
                period: PERIOD, qishu: QISHU, formStart: FORM_START, formEnd: FORM_END,
                orderStart: ORDER_START, orderEnd: ORDER_END},
+      columns: {qj: colQj, sx: colSx, jjForm: colJJ, dfForm: colDF},
       validPools: {
-        '强基': {title: fQj.title, header: fQj.header, kept: keptQj,
+        '强基': {title: fQj.title, header: fQj.header, map: fQj.map, kept: keptQj,
                  stats: {total: fQj.total, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, kept: keptQj.length}},
-        '升学': {title: fSx.title, header: fSx.header, kept: keptSx,
+        '升学': {title: fSx.title, header: fSx.header, map: fSx.map, kept: keptSx,
                  stats: {total: fSx.total, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, kept: keptSx.length}}
       },
       stats: {
@@ -630,6 +869,11 @@
   var api = {
     audit: audit,
     classifyAbnormal: classifyAbnormal,
+    resolveColumnMap: resolveColumnMap,
+    inspectSheet: inspectSheet,
+    guessKind: guessKind,
+    SCHEMAS: SCHEMAS,
+    normHeader: normHeader,
     parseDt: parseDt,
     fmtDt: fmtDt,
     fmtMoney: fmtMoney,
