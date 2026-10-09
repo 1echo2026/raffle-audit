@@ -1461,6 +1461,7 @@
       handleFiles(e.dataTransfer.files);
     });
     zone.addEventListener('click', function () { input.click(); });
+    document.getElementById('btnColMap').addEventListener('click', openColumnPanel);
     document.getElementById('btnRun').addEventListener('click', openColumnPanel);
     document.getElementById('cmConfirm').addEventListener('click', confirmColumnPanel);
     document.getElementById('cmReset').addEventListener('click', resetColumnPanel);
