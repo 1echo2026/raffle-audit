@@ -20,7 +20,6 @@
 
   var CN_NUM = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8};
   var NUM_CN = {1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八'};
-  var formSeq = 0;  // 提交记录的稳定编号(进阶问卷在前),跨重新审核保持一致,供前端绿色通道/修改定位
   var HEADER_SCAN = 10;  // 表头行扫描范围(前 10 行)
 
   function str(v) {
@@ -318,11 +317,14 @@
     for (var i = start; i < rows.length; i++) {
       var row = rows[i] || [];
       var rawPhone = iPh == null ? '' : row[iPh];
-      if (!rawPhone) continue;
       var pp = parsePrizeText(iPz == null ? '' : row[iPz]);
       var cp = cleanPhone(rawPhone);
       var rawSubmit = iSt == null ? '' : row[iSt];
       var dt = parseDt(rawSubmit);
+      // 整行为空则跳过;手机号为空的行保留(列为无效"格式不正确"),避免修改清空后记录消失
+      var isBlank = !str(row[iNk]) && !str(row[iAv]) && !str(row[iPz]) &&
+                    !str(rawSubmit) && !str(row[iBs]) && !str(row[iNm]) && !str(rawPhone);
+      if (isBlank) continue;
       out.push({
         pool: pool,
         nickname: iNk == null ? '' : str(row[iNk]),
@@ -335,7 +337,8 @@
         real_name: iNm == null ? '' : str(row[iNm]),
         phone: cp.phone,
         phone_format_ok: cp.ok,
-        form_i: formSeq++,
+        // form_i 按"问卷行位置"固定(进阶 0..n,巅峰 1000000+行号),不随行增减/编辑漂移
+        form_i: (pool === '巅峰' ? 1000000 : 0) + i,
         raw_row: row
       });
     }
@@ -366,7 +369,6 @@
   function audit(input) {
     var params = input.params || {};
     var overrides = input.columnOverrides || {};
-    formSeq = 0;
     var PREFIX = params.channelPrefix || 'grow_xcg_zhuanjs_xiaoshou';
     var MIN_AMT = toFloat(params.minAmount != null ? params.minAmount : 999);
     var THRESHOLD = toFloat(params.threshold != null ? params.threshold : 20000);
@@ -579,10 +581,18 @@
       var chSet = {};
       rows.forEach(function (r) { if (r.channel) chSet[r.channel] = 1; });
       s.channel = Object.keys(chSet).join('、');
+      // 销售姓名/工号:按出现次数取多数,忽略空值(否则空值参与投票会让工号变空)
       var nv = {}, gv = {};
-      rows.forEach(function (r) { inc(nv, r.sales_name); inc(gv, r.gonghao); });
+      rows.forEach(function (r) {
+        if (r.sales_name) inc(nv, r.sales_name);
+        if (r.gonghao) inc(gv, r.gonghao);
+      });
       s.sales_name = Object.keys(nv).sort(function (a, b) { return nv[b] - nv[a]; })[0] || '';
       s.gonghao = Object.keys(gv).sort(function (a, b) { return gv[b] - gv[a]; })[0] || '';
+      // 订单池里该手机号关联的订单全部没有"订单归属人工号"时,明确标注(便于人工核查)
+      if (!s.gonghao) {
+        s.gonghao_missing = rows.length > 0;
+      }
       var st = ghStats[s.gonghao];
       if (st) {
         s.total_amount = st.total;

@@ -495,7 +495,8 @@
             d.total == null ? '' : AuditCore.fmtMoney(d.total)];
   }
   function invalidFields(s) {
-    return [s.pool, s.nickname, s.base, s.real_name, s.phone, s.prize_name, s.expected_pool, s.invalid_reasons, s.abnormal_type || ''];
+    return [s.pool, s.nickname, s.base, s.real_name, s.phone, s.prize_name, s.expected_pool,
+            s.invalid_reasons, s.abnormal_type || '', s.gonghao || ''];
   }
   function rankMode() {
     return !!(document.getElementById('rankByCount') && document.getElementById('rankByCount').checked);
@@ -570,10 +571,11 @@
     var list = (r.invalidList || []).filter(function (s) { return kwMatch(kws, invalidFields(s)); });
     var h = ['<div class="muted search-count">无效共 ' + (r.invalidList || []).length + ' 人'
       + (kws.length ? ' · 匹配 ' + list.length + ' 人' : '') + ' · 点击"无效原因"单元格可直接修改</div>'];
-    h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>奖品</th><th>应属奖池</th><th>无效原因</th><th>操作</th></tr>');
+    h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
       h.push('<tr><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
         + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
+        + '<td>' + hl(s.gonghao || '—', kws) + '</td>'
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
         + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
         + '<td class="ops"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button> '
@@ -854,6 +856,26 @@
       '当前: ' + (s.real_name || s.nickname || '') + ' · ' + (s.phone || '') + ' · ' + (s.base || '') + ' · ' + (s.invalid_reasons || '');
     document.getElementById('editModal').style.display = 'flex';
   }
+  // 按列映射写回问卷原始行(不再写死列下标;文件列顺序变化也正确)
+  function writeFormRow(s, patch) {
+    var slotKey = s.pool === '巅峰' ? 'dfForm' : 'jjForm';
+    var insp = inspectSlot(slotKey);
+    var m = insp ? insp.info.map : {};
+    var wrote = {};
+    function put(field, val) {
+      if (val == null) return;
+      if (m[field] == null) return;         // 该字段没有映射到列 → 跳过
+      s.raw_row[m[field]] = val;
+      wrote[field] = true;
+    }
+    put('real_name', patch.real_name);
+    put('phone', patch.phone);
+    put('base', patch.base);
+    put('prize', patch.prize);
+    put('nickname', patch.nickname);
+    put('submit_time', patch.submit_time);
+    return wrote;
+  }
   function saveEdit() {
     var s = findSub(pendingEdit);
     if (!s) { alert('未找到该记录'); return; }
@@ -864,12 +886,13 @@
     var cp = AuditCore.cleanPhone(ph);
     if (ph && !cp.ok) { alert('手机号格式不正确(需 1 开头 11 位数字)'); return; }
     // 写回原始问卷行:重新审核即按新信息匹配订单,能匹配且无异常则转入有效名单
-    s.raw_row[5] = nm;
-    s.raw_row[6] = ph;
-    s.raw_row[4] = bs;
+    var wrote = writeFormRow(s, {real_name: nm, phone: ph, base: bs});
     document.getElementById('editModal').style.display = 'none';
+    if (!wrote.phone) log('提示: 未找到"出单手机号"列映射,手机号未写回,请检查列映射', 'err');
     rerunAudit();
-    log('已修改并重新匹配: ' + (nm || s.nickname) + ' 手机号=' + ph + ' 基地=' + bs);
+    var after = findSub(pendingEdit);
+    var extra = (after && after.invalid_reasons) ? (' · 仍未通过:' + after.invalid_reasons) : ' · 已通过';
+    log('已修改并重新匹配: ' + (nm || s.nickname) + ' 手机号=' + ph + ' 基地=' + bs + extra);
   }
 
   // ---------- 历史记录(localStorage 快照) ----------
@@ -1036,11 +1059,11 @@
     if (!s) return;
     var v = (el.textContent || '').trim();
     var old = '';
-    if (f === 'base') { old = s.base; s.base = v; if (s.raw_row) s.raw_row[4] = v; }
-    else if (f === 'name') { old = s.real_name; s.real_name = v; if (s.raw_row) s.raw_row[5] = v; }
+    if (f === 'base') { old = s.base; s.base = v; if (s.raw_row) writeFormRow(s, {base: v}); }
+    else if (f === 'name') { old = s.real_name; s.real_name = v; if (s.raw_row) writeFormRow(s, {real_name: v}); }
     else if (f === 'gh') { old = s.gonghao || ''; s.gonghao = v; }
-    else if (f === 'phone') { old = s.phone; s.phone = v; if (s.raw_row) s.raw_row[6] = v; }
-    else if (f === 'prize') { old = s.prize_name; s.prize_name = v; }
+    else if (f === 'phone') { old = s.phone; s.phone = v; if (s.raw_row) writeFormRow(s, {phone: v}); }
+    else if (f === 'prize') { old = s.prize_name; s.prize_name = v; if (s.raw_row) writeFormRow(s, {prize: v}); }
     else return;
     if (v === (old || '')) return;
     rebuildGroups(lastResult);
@@ -1659,6 +1682,7 @@
         Object.keys(files).forEach(function (k) { out[k] = files[k].name; });
         return out;
       },
+      getRawRows: function (k) { return files[k] ? files[k].rows : null; },
       getResult: function () { return lastResult; },
       getTemplates: function () { return templates; },
       setTemplates: function (arr) { templates = arr; if (window.TplCore) TplCore.save(templates); },
@@ -1705,9 +1729,9 @@
         var s = findSub(fi);
         if (!s) throw new Error('entry not found: ' + fi);
         if (!s.raw_row) throw new Error('entry has no raw_row');
-        if (phone != null) s.raw_row[6] = phone;
-        if (name != null) s.raw_row[5] = name;
-        if (base != null) s.raw_row[4] = base;
+        if (phone != null) writeFormRow(s, {phone: phone});
+        if (name != null) writeFormRow(s, {real_name: name});
+        if (base != null) writeFormRow(s, {base: base});
         rerunAudit();
         return lastResult;
       },
