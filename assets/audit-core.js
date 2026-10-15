@@ -413,19 +413,26 @@
     // 1) 过滤有效订单(含支付时间范围)
     function filterPool(rows, info) {
       var m = info.map;
-      var iAcct = m.account, iAmt = m.amount, iPay = m.pay_time;
+      var iAcct = m.account, iAmt = m.amount, iPay = m.pay_time, iMasked = m.masked;
+      function isMaskedPhone(v) {
+        var s = str(v);
+        return /^1\d{10}$/.test(s) || /^1\d{2}\*{4}\d{4}$/.test(s);
+      }
       // 匹配池保留全部渠道(渠道差异在资格判定阶段归类为异常)
-      var kept = [], rejAmt = 0, rejTime = 0;
+      var kept = [], rejAmt = 0, rejTime = 0, noPhone = 0;
       for (var i = info.startRow; i < rows.length; i++) {
         var r = rows[i];
         if (!r || !r[iAcct]) continue;
         var amt = toFloat(r[iAmt]);
         if (amt < MIN_AMT) { rejAmt++; continue; }
         if (!inRange(parseDt(r[iPay]), ORDER_START, ORDER_END)) { rejTime++; continue; }
+        // 该订单没有可用的"加密手机号"(空/0/非手机号格式):保留但无法参与手机号匹配,单独计数提示
+        if (!isMaskedPhone(r[iMasked])) noPhone++;
         kept.push(r);
       }
       return {title: info.title || [], header: info.header || [], map: m, info: info,
-              kept: kept, rejAmount: rejAmt, rejTime: rejTime, total: kept.length + rejAmt + rejTime};
+              kept: kept, rejAmount: rejAmt, rejTime: rejTime, noPhone: noPhone,
+              total: kept.length + rejAmt + rejTime};
     }
 
     var fQj = filterPool(input.rawOrders.qiangji || [], colQj);
@@ -845,6 +852,25 @@
     }
     var keptQj = xiaoKept(fQj.kept, colQj), keptSx = xiaoKept(fSx.kept, colSx);
 
+    // 订单池"加密手机号"缺失(空/0/非手机号格式)的行 → 提示(这些行无法参与手机号匹配)
+    function noPhoneCount(kept, info) {
+      var iM = info.map.masked, n = 0;
+      kept.forEach(function (r) {
+        var s = str(r[iM]);
+        if (!/^1\d{10}$/.test(s) && !/^1\d{2}\*{4}\d{4}$/.test(s)) n++;
+      });
+      return n;
+    }
+    var noPhoneQj = noPhoneCount(keptQj, colQj), noPhoneSx = noPhoneCount(keptSx, colSx);
+    function addWarn(info, label, n) {
+      if (!n) return;
+      var w = label + ' 有 ' + n + ' 条订单的"加密手机号"为空或为 0,这些订单金额正常计入,但无法参与手机号匹配(其"出单手机号"列会显示为空)';
+      info.warnings = info.warnings || [];
+      info.warnings.push(w);
+    }
+    addWarn(colQj, '强基订单池', noPhoneQj);
+    addWarn(colSx, '升学订单池', noPhoneSx);
+
     return {
       params: {channelPrefix: PREFIX, minAmount: MIN_AMT, threshold: THRESHOLD,
                period: PERIOD, qishu: QISHU, formStart: FORM_START, formEnd: FORM_END,
@@ -852,9 +878,9 @@
       columns: {qj: colQj, sx: colSx, jjForm: colJJ, dfForm: colDF},
       validPools: {
         '强基': {title: fQj.title, header: fQj.header, map: fQj.map, kept: keptQj,
-                 stats: {total: fQj.total, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, kept: keptQj.length}},
+                 stats: {total: fQj.total, rejAmount: fQj.rejAmount, rejTime: fQj.rejTime, noPhone: noPhoneQj, kept: keptQj.length}},
         '升学': {title: fSx.title, header: fSx.header, map: fSx.map, kept: keptSx,
-                 stats: {total: fSx.total, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, kept: keptSx.length}}
+                 stats: {total: fSx.total, rejAmount: fSx.rejAmount, rejTime: fSx.rejTime, noPhone: noPhoneSx, kept: keptSx.length}}
       },
       stats: {
         submitted: submissions.length,

@@ -406,6 +406,11 @@
     }
     return '';
   }
+  // 掩码手机号是否为有效值(空/0/非手机号格式 → 该订单未记录加密手机号)
+  function isMaskedPhone(v) {
+    var s = String(v === null || v === undefined ? '' : v).trim();
+    return /^1\d{10}$/.test(s) || /^1\d{2}\*{4}\d{4}$/.test(s);
+  }
   function showPoolOrder(poolName) {
     var r = lastResult;
     var pool = r.validPools[poolName];
@@ -420,18 +425,26 @@
       if (!phoneFull[mk]) phoneFull[mk] = s.phone;
     });
     var cols = ['基地','姓名','工号','出单手机号','奖品','业绩归属渠道','业绩归属时间','订单转化金额','异常情况说明（如有）'];
+    var noPhone = 0;
     var rows = pool.kept.map(function (rr) {
+      var rawMask = cell(rr, 'masked');
+      var okMask = isMaskedPhone(rawMask);
+      if (!okMask) noPhone++;
+      var masked = okMask ? AuditCore.maskPhone(String(rawMask).trim()) : '';
       // 奖品在进阶/巅峰两个奖池问卷中按掩码手机号(优先)/真实姓名查找
-      var masked = AuditCore.maskPhone(String(cell(rr, 'masked')).trim());
       var prize = lookupPrize(lu, masked, String(cell(rr, 'cust_name')).trim());
       // 业绩归属时间:无该列时回退支付时间
       var perf = (m.perf_time == null ? cell(rr, 'pay_time') : cell(rr, 'perf_time')) || cell(rr, 'pay_time');
+      // 该订单未记录加密手机号时明确标注(否则会误以为"手机号为0却有金额"是程序出错)
+      var note = okMask ? '' : ('订单池该行未记录"加密手机号"（原始值：' +
+        (String(rawMask).trim() === '' ? '空' : String(rawMask).trim()) + '），无法参与手机号匹配');
       // 列序: 基地/姓名/工号/出单手机号/奖品/业绩归属渠道/业绩归属时间/订单转化金额/异常情况说明
       return [baseFromOrg(cell(rr, 'org')), cell(rr, 'cust_name'), cell(rr, 'gonghao'),
-              phoneFull[masked] || cell(rr, 'masked'), prize, cleanChannel(cell(rr, 'channel')),
-              perf, AuditCore.fmtMoney(cell(rr, 'amount')), ''];
+              phoneFull[masked] || (okMask ? rawMask : '—'), prize, cleanChannel(cell(rr, 'channel')),
+              perf, AuditCore.fmtMoney(cell(rr, 'amount')), note];
     });
-    openDetailModal(poolName + '有效订单池（' + rows.length + ' 条，仅销售直推渠道）', rows, cols);
+    openDetailModal(poolName + '有效订单池（' + rows.length + ' 条，仅销售直推渠道'
+      + (noPhone ? '；其中 ' + noPhone + ' 条未记录加密手机号' : '') + '）', rows, cols);
   }
 
   // ---------- 图片格式预览 ----------
@@ -1255,7 +1268,10 @@
     [['巅峰', groupsDF], ['进阶', groupsJJ]].forEach(function (pp) {
       pp[1].forEach(function (g) {
         g.rows.forEach(function (x) {
-          rows.push([x.base || '', x.name || '', x.gonghao || '', x.phone || '', x.convert_amount || 0,
+          // 出单手机号为空/0 时留空(避免误以为"有金额却没手机号"是程序出错);绿色通道码等非空值原样保留
+          var p0 = String(x.phone || '').trim();
+          var ph = (p0 === '' || /^0+$/.test(p0)) ? '' : p0;
+          rows.push([x.base || '', x.name || '', x.gonghao || '', ph, x.convert_amount || 0,
                      x.account || '', x.order_time || '', pp[0], g.level_text || '', g.prize || '',
                      x.green_code || '']);
         });
