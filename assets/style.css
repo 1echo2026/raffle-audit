@@ -202,6 +202,23 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
 
+/* 新增行(在上次记录基础上继续时)淡橙色;后续规则不可覆盖 */
+.grid tr.new-row td, .grid tr.dup-row.new-row td { background: #ffe8cc !important; }
+/* 沿用上次记录的提示条 */
+.cont-tip {
+  background: #fff7e6; border: 1px solid #ffd591; color: #ad4e00;
+  border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0 12px;
+}
+/* 继续/重审确认弹窗 */
+.modal-box.small { max-width: 520px; }
+.cont-list { margin: 8px 0 8px 18px; font-size: 13px; line-height: 1.9; }
+.cont-orange { color: #d46b08; }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 12px 18px; border-top: 1px solid var(--border); background: #fafafa;
+}
+.modal-foot .btn { padding: 8px 16px; font-size: 13px; }
+
 /* 无效名单:操作按钮竖排 + 奖品列宽约原来 3 倍(避免奖品名竖排) */
 .invalid-grid th:nth-child(8), .invalid-grid td:nth-child(8) { min-width: 180px; }
 .ops-stack { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }

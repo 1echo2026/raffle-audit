@@ -854,7 +854,8 @@
                 submit_time: s.submit_time_raw || '',
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
-                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
+                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0,
+                is_new: !!s.is_new};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {

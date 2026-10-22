@@ -215,10 +215,87 @@
   }
 
   // ---------- 运行 ----------
+  // ---------- 与上次同一组文件:询问是否在上次记录基础上继续 ----------
+  var LAST_SIG_KEY = 'raffle_last_filesig_v1';
+  var runDecision = null;   // 'continue' | 'fresh'(仅本次审核有效)
+  var contInfo = null;      // {prevTs, prevStats, added} 供结果页提示
+  function currentFileSig() {
+    var names = SLOTS.map(function (s) { return files[s.key] ? files[s.key].name : ''; }).filter(function (n) { return !!n; });
+    if (names.length !== SLOTS.length) return '';
+    return names.slice().sort().join('|');
+  }
+  function findPrevBySig(sig) {
+    if (!sig) return null;
+    var h = loadHistory();
+    for (var i = 0; i < h.length; i++) {
+      if (h[i].fileSig === sig && h[i].result) return h[i];
+    }
+    return null;
+  }
+  // 记录身份键:优先手机号,无手机号时用 姓名+提交时间,保证新增行判断稳定
+  function recKey(x) {
+    var ph = String(x.phone || '').trim();
+    if (ph) return 'P:' + ph;
+    return 'N:' + (x.real_name || x.nickname || '') + '|' + (x.submit_time_raw || '');
+  }
+  function showContinueModal(prev) {
+    var p = prev.result.stats || {};
+    document.getElementById('contPrevInfo').textContent =
+      prev.ts + '（第' + (prev.qishu || '?') + '期 ' + (prev.period || '') + '）· 有效 ' +
+      (p.valid || 0) + ' / 无效 ' + (p.invalid || 0) + ' / 重复 ' + (p.duplicates || 0);
+    document.getElementById('continueModal').style.display = 'flex';
+  }
+  // 沿用上次快照:按 form_i(同一组文件行位置稳定)优先,回退手机号/姓名+提交时间
+  function restoreFromSnapshot(snap, fresh, commSnap) {
+    var prevMap = {}, prevFi = {};
+    ['validList', 'invalidList', 'duplicates'].forEach(function (k) {
+      (snap[k] || []).forEach(function (p) {
+        var rk = recKey(p);
+        if (!prevMap[rk]) prevMap[rk] = p;   // 同手机号时保留列表靠前的那条(通过放行的在 validList)
+        if (p.form_i != null) prevFi[p.form_i] = p;
+      });
+    });
+    overrides = {};
+    commEdits = {};
+    var all = (fresh.validList || []).concat(fresh.invalidList || [], fresh.duplicates || []);
+    var added = 0, restored = 0;
+    all.forEach(function (s) {
+      var p = null;
+      if (s.form_i != null && prevFi[s.form_i] && recKey(prevFi[s.form_i]) === recKey(s)) p = prevFi[s.form_i];
+      if (!p) p = prevMap[recKey(s)];
+      if (!p) { s.is_new = true; added++; return; }
+      var o = null;
+      if (p.green_code) { o = {green_code: p.green_code, manual: !!p.green_pass_manual}; }
+      else if (p.fail_from_valid) { o = {rejected: true, reason: p.invalid_reasons || '中奖人员明细表手动退回'}; }
+      if (p.audit_result) { o = o || {}; o.audit = p.audit_result; }
+      if (o) { overrides[s.form_i] = o; restored++; }
+    });
+    // 话术表修改按 form_i 回填(commEditSnap 存在历史条目外层,由调用方传入)
+    var ce = commSnap || {};
+    Object.keys(ce).forEach(function (k) {
+      var s = null;
+      if (/^\d+$/.test(k)) s = all.filter(function (x) { return String(x.form_i) === k; })[0];
+      if (!s) s = all.filter(function (x) { return String(x.phone || '') === k; })[0];
+      if (s) commEdits[s.form_i] = ce[k];
+    });
+    return {added: added, restored: restored};
+  }
   function run() {
     var missing = SLOTS.filter(function (s) { return !files[s.key]; }).map(function (s) { return s.label; });
     if (missing.length) { alert('还缺少文件:\n' + missing.join('\n')); return; }
-    log('开始审核…');
+    // 同一组文件:先询问是否沿用上次已保存记录
+    var sig = currentFileSig();
+    if (!runDecision && sig && localStorage.getItem(LAST_SIG_KEY) === sig) {
+      var prev = findPrevBySig(sig);
+      if (prev) { showContinueModal(prev); return; }
+    }
+    doRun(runDecision, sig);
+    runDecision = null;
+  }
+  function doRun(mode, sig) {
+    if (mode === 'fresh') { overrides = {}; commEdits = {}; }
+    log(mode === 'continue' ? '开始审核(沿用上次记录，保留人工处理)…' :
+        (mode === 'fresh' ? '开始审核(全部重新审核，不沿用上次人工处理)…' : '开始审核…'));
     var result;
     try {
       result = AuditCore.audit(auditInput());
@@ -226,7 +303,19 @@
       log('审核出错: ' + e.message, 'err');
       throw e;
     }
+    // 沿用上次:恢复人工裁决 + 标记新增行(淡橙色)
+    contInfo = null;
+    if (mode === 'continue') {
+      var prev = findPrevBySig(sig);
+      if (prev) {
+        var res = restoreFromSnapshot(prev.result, result, prev.commEditSnap);
+        contInfo = {prevTs: prev.ts, added: res.added, restored: res.restored};
+        log('已沿用上次记录(' + prev.ts + ')：恢复人工处理 ' + res.restored + ' 条，本次新增 ' + res.added +
+            ' 条(淡橙色标出)', 'ok');
+      }
+    }
     lastResult = applyOverrides(result);
+    if (mode === 'continue') rebuildGroups(lastResult);
     var tInfo = lastResult.params.formStart || lastResult.params.formEnd || lastResult.params.orderStart || lastResult.params.orderEnd
       ? ' (已启用时间范围过滤)' : '';
     log('完成:有效 ' + lastResult.stats.valid + '(进阶' + lastResult.stats.validJJ + '/巅峰' + lastResult.stats.validDF +
@@ -234,8 +323,19 @@
         ';有效订单 强基' + lastResult.validPools['强基'].stats.kept + '/升学' + lastResult.validPools['升学'].stats.kept + tInfo, 'ok');
     logColumnReport(lastResult);
     renderAll(lastResult);
+    var tip = document.getElementById('contTip');
+    if (tip) {
+      if (contInfo) {
+        tip.style.display = 'block';
+        tip.innerHTML = '🟠 已在上次记录（' + esc(contInfo.prevTs) + '）基础上继续：人工处理 ' + contInfo.restored +
+          ' 条已恢复；本次新增 <b>' + contInfo.added + '</b> 条，行底色为淡橙色。';
+      } else {
+        tip.style.display = 'none';
+      }
+    }
     document.getElementById('results').style.display = 'block';
-    saveHistory();
+    saveHistory(sig);
+    if (sig) { try { localStorage.setItem(LAST_SIG_KEY, sig); } catch (e) {} }
   }
 
   // ---------- 列映射确认面板(点「开始审核」前展示,可手动指定并记住) ----------
@@ -660,7 +760,8 @@
         items.push({rank: i + 1, pool: s.pool, base: s.base, name: s.real_name || s.nickname,
           gh: s.gonghao || '', phone: s.phone, lvText: levelText(s) || '', prize: s.prize_name || '',
           conv: s.convert_amount || 0, count: s.order_count || 0, total: s.total_amount || 0,
-          green: s.green_code || '', fi: s.form_i, submit: s.submit_time_raw || ''});
+          green: s.green_code || '', fi: s.form_i, submit: s.submit_time_raw || '',
+          isNew: !!s.is_new});
       });
     } else {
       [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
@@ -668,7 +769,8 @@
           g.rows.forEach(function (x) {
             items.push({pool: pp[0], base: x.base, name: x.name, gh: x.gonghao || '', phone: x.phone,
               lvText: g.level_text, prize: g.prize, conv: x.convert_amount || 0, count: x.order_count || 0,
-              total: null, green: x.green_code || '', fi: x.form_i, submit: x.submit_time || ''});
+              total: null, green: x.green_code || '', fi: x.form_i, submit: x.submit_time || '',
+              isNew: !!x.is_new});
           });
         });
       });
@@ -692,7 +794,7 @@
     h.push('<th>操作</th>');
     h.push('</tr>');
     items.forEach(function (x, i) {
-      h.push('<tr><td>' + (i + 1) + '</td>');
+      h.push('<tr' + (x.isNew ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td>');
       if (rank) h.push('<td>' + x.rank + '</td>');
       h.push('<td>' + hl(x.pool, kws) + '</td>'
         + '<td>' + edCell(x.fi, 'base', x.base, kws) + '</td>'
@@ -744,7 +846,7 @@
       + ' · 点击"无效原因"单元格可直接修改</div>'];
     h.push('<table class="grid invalid-grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>提交时间</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
-      h.push('<tr><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
+      h.push('<tr' + (s.is_new ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
         + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
         + '<td>' + hl(s.gonghao || '—', kws) + '</td>'
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
@@ -764,7 +866,7 @@
       h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th>'
         + '<th>提交时间</th><th>被剔记录奖品</th><th>被保留记录（奖品/人员/提交时间）</th><th>剔除说明</th><th>操作</th></tr>');
       dups.forEach(function (s, i) {
-        h.push('<tr class="dup-row"><td>' + (i + 1) + '</td>'
+        h.push('<tr class="dup-row' + (s.is_new ? ' new-row' : '') + '"><td>' + (i + 1) + '</td>'
           + '<td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
           + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td>'
           + '<td>' + hl(s.phone, kws) + '</td><td>' + hl(s.gonghao || '—', kws) + '</td>'
@@ -808,7 +910,8 @@
                 submit_time: s.submit_time_raw || '',
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
-                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
+                convert_amount: s.convert_amount || 0, order_count: s.order_count || 0,
+                is_new: !!s.is_new};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
@@ -842,7 +945,7 @@
       reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
       expected_pool: s.expected_pool, period: p.period || '', qishu: p.qishu || '',
       order_time: s.order_time || '', peak_orders: s.peak_orders || 0,
-      audit_result: s.audit_result || '', form_i: s.form_i
+      audit_result: s.audit_result || '', form_i: s.form_i, is_new: !!s.is_new
     };
   }
   // 人工裁决统一入口:
@@ -1142,15 +1245,21 @@
       validPools: r.validPools || {}
     };
   }
-  function saveHistory() {
+  function saveHistory(sig) {
     var r = lastResult;
     if (!r) { alert('还没有审核结果可保存'); return; }
+    if (typeof sig !== 'string' || !sig) sig = currentFileSig();
     var h = loadHistory();
+    // 话术表修改按 form_i 存档,便于"在上次基础上继续"时回填
+    var ce = {};
+    Object.keys(commEdits || {}).forEach(function (fi) { ce[fi] = commEdits[fi]; });
     h.unshift({
       id: Date.now(),
       ts: new Date().toLocaleString(),
       period: (r.params && r.params.period) || '',
       qishu: (r.params && r.params.qishu) || '',
+      fileSig: sig,
+      commEditSnap: ce,
       stats: {
         submitted: r.stats.submitted, valid: r.stats.valid, validJJ: r.stats.validJJ,
         validDF: r.stats.validDF, invalid: r.stats.invalid, duplicates: r.stats.duplicates,
@@ -1364,7 +1473,7 @@
     list.forEach(function (c, i) {
       var name = c.real_name || c.nickname || '';
       var pt = c.form_i == null ? '' : c.form_i;
-      rows.push('<tr><td>' + (i + 1) + '</td>'
+      rows.push('<tr' + (c.is_new ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td>'
         + '<td>' + edCell(pt, 'cbase', c.base, kws) + '</td>'
         + '<td>' + edCell(pt, 'cname', name, kws) + '</td>'
         + '<td>' + edCell(pt, 'cgh', c.gonghao || '', kws) + '</td>'
@@ -1839,6 +1948,23 @@
     document.getElementById('colMapModal').addEventListener('click', function (e) {
       if (e.target === this) this.style.display = 'none';
     });
+    // 与上次同一组文件:沿用上次记录 / 全部重新审核
+    document.getElementById('contYes').addEventListener('click', function () {
+      runDecision = 'continue';
+      document.getElementById('continueModal').style.display = 'none';
+      run();
+    });
+    document.getElementById('contNo').addEventListener('click', function () {
+      runDecision = 'fresh';
+      document.getElementById('continueModal').style.display = 'none';
+      run();
+    });
+    document.getElementById('contClose').addEventListener('click', function () {
+      document.getElementById('continueModal').style.display = 'none';
+    });
+    document.getElementById('continueModal').addEventListener('click', function (e) {
+      if (e.target === this) this.style.display = 'none';
+    });
     document.getElementById('btnDownload').addEventListener('click', openExportModal);
     // 详情弹窗:关闭按钮 + 点击遮罩关闭
     document.getElementById('modalClose').addEventListener('click', closeDetailModal);
@@ -1987,7 +2113,7 @@
     document.getElementById('rankByCount').addEventListener('change', function () { if (lastResult) renderDetail(lastResult); });
 
     // 历史记录
-    document.getElementById('btnSaveHistory').addEventListener('click', saveHistory);
+    document.getElementById('btnSaveHistory').addEventListener('click', function () { saveHistory(); });
     document.getElementById('historyList').addEventListener('click', function (e) {
       var el = e.target;
       while (el && el !== this && el.tagName !== 'BUTTON') el = el.parentElement;
@@ -2062,6 +2188,7 @@
       inspectSlot: inspectSlot,
       logColumnReport: logColumnReport,
       failToInvalid: failToInvalid,
+      greenPass: greenPass,
       markPendingReview: markPendingReview,
       updateHistItem: updateHistItem,
       commFilterVals: commFilterVals,
