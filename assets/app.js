@@ -624,10 +624,20 @@
     if (w) tbl.style.width = w + 'px';
   }
   // 冻结当前列宽(转为 fixed 布局 + colgroup),之后拖拽只改对应 col
+  // 隐藏 Tab 里量到的宽度全是 0,此时不能冻结(否则列宽被写成 0,整表被压扁)
   function freezeGrid(tbl) {
-    if (gridCols(tbl)) return;
     var heads = tbl.rows[0] ? tbl.rows[0].cells : null;
-    if (!heads) return;
+    if (!heads || !heads.length) return false;
+    var existing = tbl.querySelector('colgroup.grp');
+    if (existing) {
+      var bad = false;
+      Array.prototype.forEach.call(existing.children, function (c) { if (!(parseFloat(c.style.width) > 0)) bad = true; });
+      if (!bad) return true;
+      existing.parentNode.removeChild(existing);   // 之前隐藏时冻结出的 0 宽 colgroup,丢弃重建
+      tbl.style.tableLayout = '';
+      tbl.style.width = '';
+    }
+    if (!heads[0].getBoundingClientRect().width) return false;   // 容器不可见,等切到该 Tab 再冻结
     var cg = document.createElement('colgroup');
     cg.className = 'grp';
     Array.prototype.forEach.call(heads, function (th) {
@@ -638,6 +648,7 @@
     tbl.insertBefore(cg, tbl.firstChild);
     tbl.style.tableLayout = 'fixed';
     setGridTableWidth(tbl);
+    return true;
   }
   function applySavedGridWidths(tbl) {
     var saved = colWidthStore[gridKey(tbl)] || {};
@@ -646,7 +657,7 @@
     var has = false;
     Array.prototype.forEach.call(heads, function (th) { if (saved[thText(th)]) has = true; });
     if (!has) return;
-    freezeGrid(tbl);
+    if (!freezeGrid(tbl)) return;   // 隐藏 Tab 里先不套用,切到该 Tab 时再套
     var cols = gridCols(tbl);
     Array.prototype.forEach.call(heads, function (th, i) {
       var w = saved[thText(th)];
@@ -663,17 +674,20 @@
     setGridTableWidth(tbl);
   }
   function bindGridResize(tbl) {
-    if (tbl.getAttribute('data-resizable') === '1') return;
-    tbl.setAttribute('data-resizable', '1');
     var heads = tbl.rows[0] ? tbl.rows[0].cells : null;
     if (!heads) return;
-    Array.prototype.forEach.call(heads, function (th) {
-      var h = document.createElement('span');
-      h.className = 'col-resizer';
-      h.title = '拖动调整列宽 · 双击恢复自动列宽';
-      th.appendChild(h);
-    });
-    applySavedGridWidths(tbl);
+    if (tbl.getAttribute('data-resizable') !== '1') {
+      tbl.setAttribute('data-resizable', '1');
+      Array.prototype.forEach.call(heads, function (th) {
+        var h = document.createElement('span');
+        h.className = 'col-resizer';
+        h.title = '拖动调整列宽 · 双击恢复自动列宽';
+        th.appendChild(h);
+      });
+    }
+    applySavedGridWidths(tbl);   // 每次重渲染/切到该 Tab 都尝试套用记忆列宽
+    if (tbl.getAttribute('data-resize-bound') === '1') return;
+    tbl.setAttribute('data-resize-bound', '1');
     tbl.addEventListener('mousedown', function (e) {
       var h = e.target;
       if (!h.classList || !h.classList.contains('col-resizer')) return;

@@ -262,7 +262,12 @@ document.querySelectorAll('.tab').forEach(function (t) {
     document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
     document.querySelectorAll('.tabpane').forEach(function (x) { x.classList.remove('active'); });
     t.classList.add('active');
-    document.getElementById(t.dataset.tab).classList.add('active');
+    var pane = document.getElementById(t.dataset.tab);
+    if (pane) {
+      pane.classList.add('active');
+      // 切到该 Tab 后再套用记忆的列宽(隐藏时量不到宽度,不能提前冻结)
+      if (window.App && App.enhanceGrids) App.enhanceGrids(pane);
+    }
   });
 });
 </script>
