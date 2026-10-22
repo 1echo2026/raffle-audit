@@ -263,12 +263,12 @@
       var p = null;
       if (s.form_i != null && prevFi[s.form_i] && recKey(prevFi[s.form_i]) === recKey(s)) p = prevFi[s.form_i];
       if (!p) p = prevMap[recKey(s)];
-      if (!p) { s.is_new = true; added++; return; }
+      if (!p) { added++; return; }
       var o = null;
       if (p.green_code) { o = {green_code: p.green_code, manual: !!p.green_pass_manual}; }
       else if (p.fail_from_valid) { o = {rejected: true, reason: p.invalid_reasons || '中奖人员明细表手动退回'}; }
       if (p.audit_result) { o = o || {}; o.audit = p.audit_result; }
-      if (o) { overrides[s.form_i] = o; restored++; }
+      if (o) { overrides[s.form_i] = o; restored++; s.is_carry = true; }
     });
     // 话术表修改按 form_i 回填(commEditSnap 存在历史条目外层,由调用方传入)
     var ce = commSnap || {};
@@ -276,7 +276,7 @@
       var s = null;
       if (/^\d+$/.test(k)) s = all.filter(function (x) { return String(x.form_i) === k; })[0];
       if (!s) s = all.filter(function (x) { return String(x.phone || '') === k; })[0];
-      if (s) commEdits[s.form_i] = ce[k];
+      if (s) { commEdits[s.form_i] = ce[k]; s.is_carry = true; }
     });
     return {added: added, restored: restored};
   }
@@ -328,7 +328,7 @@
       if (contInfo) {
         tip.style.display = 'block';
         tip.innerHTML = '🟠 已在上次记录（' + esc(contInfo.prevTs) + '）基础上继续：人工处理 ' + contInfo.restored +
-          ' 条已恢复；本次新增 <b>' + contInfo.added + '</b> 条，行底色为淡橙色。';
+          ' 条已恢复，<b>已处理过的行以淡橙色标出</b>；本次新增 ' + contInfo.added + ' 条（保持原色）。';
       } else {
         tip.style.display = 'none';
       }
@@ -775,7 +775,7 @@
           gh: s.gonghao || '', phone: s.phone, lvText: levelText(s) || '', prize: s.prize_name || '',
           conv: s.convert_amount || 0, count: s.order_count || 0, total: s.total_amount || 0,
           green: s.green_code || '', fi: s.form_i, submit: s.submit_time_raw || '',
-          isNew: !!s.is_new});
+          isCarry: !!s.is_carry});
       });
     } else {
       [['巅峰', r.groups['巅峰']], ['进阶', r.groups['进阶']]].forEach(function (pp) {
@@ -784,7 +784,7 @@
             items.push({pool: pp[0], base: x.base, name: x.name, gh: x.gonghao || '', phone: x.phone,
               lvText: g.level_text, prize: g.prize, conv: x.convert_amount || 0, count: x.order_count || 0,
               total: null, green: x.green_code || '', fi: x.form_i, submit: x.submit_time || '',
-              isNew: !!x.is_new});
+              isCarry: !!x.is_carry});
           });
         });
       });
@@ -808,7 +808,7 @@
     h.push('<th>操作</th>');
     h.push('</tr>');
     items.forEach(function (x, i) {
-      h.push('<tr' + (x.isNew ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td>');
+      h.push('<tr' + (x.isCarry ? ' class="carry-row"' : '') + '><td>' + (i + 1) + '</td>');
       if (rank) h.push('<td>' + x.rank + '</td>');
       h.push('<td>' + hl(x.pool, kws) + '</td>'
         + '<td>' + edCell(x.fi, 'base', x.base, kws) + '</td>'
@@ -860,7 +860,7 @@
       + ' · 点击"无效原因"单元格可直接修改</div>'];
     h.push('<table class="grid invalid-grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>提交时间</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
-      h.push('<tr' + (s.is_new ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
+      h.push('<tr' + (s.is_carry ? ' class="carry-row"' : '') + '><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
         + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
         + '<td>' + hl(s.gonghao || '—', kws) + '</td>'
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
@@ -880,7 +880,7 @@
       h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th>'
         + '<th>提交时间</th><th>被剔记录奖品</th><th>被保留记录（奖品/人员/提交时间）</th><th>剔除说明</th><th>操作</th></tr>');
       dups.forEach(function (s, i) {
-        h.push('<tr class="dup-row' + (s.is_new ? ' new-row' : '') + '"><td>' + (i + 1) + '</td>'
+        h.push('<tr class="dup-row' + (s.is_carry ? ' carry-row' : '') + '"><td>' + (i + 1) + '</td>'
           + '<td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
           + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td>'
           + '<td>' + hl(s.phone, kws) + '</td><td>' + hl(s.gonghao || '—', kws) + '</td>'
@@ -925,7 +925,7 @@
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0,
-                is_new: !!s.is_new};
+                is_carry: !!s.is_carry};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
@@ -959,7 +959,7 @@
       reason: s.invalid_reasons || '', remark: s.remark, is_duplicate: !!s.is_duplicate,
       expected_pool: s.expected_pool, period: p.period || '', qishu: p.qishu || '',
       order_time: s.order_time || '', peak_orders: s.peak_orders || 0,
-      audit_result: s.audit_result || '', form_i: s.form_i, is_new: !!s.is_new
+      audit_result: s.audit_result || '', form_i: s.form_i, is_carry: !!s.is_carry
     };
   }
   // 人工裁决统一入口:
@@ -1487,7 +1487,7 @@
     list.forEach(function (c, i) {
       var name = c.real_name || c.nickname || '';
       var pt = c.form_i == null ? '' : c.form_i;
-      rows.push('<tr' + (c.is_new ? ' class="new-row"' : '') + '><td>' + (i + 1) + '</td>'
+      rows.push('<tr' + (c.is_carry ? ' class="carry-row"' : '') + '><td>' + (i + 1) + '</td>'
         + '<td>' + edCell(pt, 'cbase', c.base, kws) + '</td>'
         + '<td>' + edCell(pt, 'cname', name, kws) + '</td>'
         + '<td>' + edCell(pt, 'cgh', c.gonghao || '', kws) + '</td>'

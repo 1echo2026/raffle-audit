@@ -202,8 +202,8 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
 
-/* 新增行(在上次记录基础上继续时)淡橙色;后续规则不可覆盖 */
-.grid tr.new-row td, .grid tr.dup-row.new-row td { background: #ffe8cc !important; }
+/* 上次已人工处理过的行(沿用上次记录时)淡橙色;后续规则不可覆盖 */
+.grid tr.carry-row td, .grid tr.dup-row.carry-row td { background: #ffe8cc !important; }
 /* 沿用上次记录的提示条 */
 .cont-tip {
   background: #fff7e6; border: 1px solid #ffd591; color: #ad4e00;
