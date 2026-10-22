@@ -303,15 +303,15 @@
       log('审核出错: ' + e.message, 'err');
       throw e;
     }
-    // 沿用上次:恢复人工裁决 + 标记新增行(淡橙色)
+    // 沿用上次:恢复人工裁决 + 标记上次已处理过的行(淡紫色)
     contInfo = null;
     if (mode === 'continue') {
       var prev = findPrevBySig(sig);
       if (prev) {
         var res = restoreFromSnapshot(prev.result, result, prev.commEditSnap);
         contInfo = {prevTs: prev.ts, added: res.added, restored: res.restored};
-        log('已沿用上次记录(' + prev.ts + ')：恢复人工处理 ' + res.restored + ' 条，本次新增 ' + res.added +
-            ' 条(淡橙色标出)', 'ok');
+        log('已沿用上次记录(' + prev.ts + ')：恢复人工处理 ' + res.restored + ' 条(淡紫色标出)，本次新增 ' +
+            res.added + ' 条', 'ok');
       }
     }
     lastResult = applyOverrides(result);
@@ -327,8 +327,8 @@
     if (tip) {
       if (contInfo) {
         tip.style.display = 'block';
-        tip.innerHTML = '🟠 已在上次记录（' + esc(contInfo.prevTs) + '）基础上继续：人工处理 ' + contInfo.restored +
-          ' 条已恢复，<b>已处理过的行以淡橙色标出</b>；本次新增 ' + contInfo.added + ' 条（保持原色）。';
+        tip.innerHTML = '🟣 已在上次记录（' + esc(contInfo.prevTs) + '）基础上继续：人工处理 ' + contInfo.restored +
+          ' 条已恢复，<b>已处理过的行以淡紫色标出</b>；本次新增 ' + contInfo.added + ' 条（保持原色）。';
       } else {
         tip.style.display = 'none';
       }
