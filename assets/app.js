@@ -552,6 +552,14 @@
       var w = saved[thText(th)];
       if (w && cols[i]) cols[i].style.width = w + 'px';
     });
+    // 无效名单"奖品"列:已记忆宽度过窄时抬到 180px(约原来 3 倍),避免奖品名竖排换行
+    if (tbl.classList && tbl.classList.contains('invalid-grid')) {
+      Array.prototype.forEach.call(heads, function (th, i) {
+        if (thText(th) !== '奖品' || !cols[i]) return;
+        var cur = parseFloat(cols[i].style.width) || 0;
+        if (cur < 180) cols[i].style.width = '180px';
+      });
+    }
     setGridTableWidth(tbl);
   }
   function bindGridResize(tbl) {
@@ -734,7 +742,7 @@
       + '；重复剔除 ' + dupsAll.length + ' 人'
       + (kws.length ? ' · 匹配 无效 ' + list.length + ' / 重复 ' + dups.length : '')
       + ' · 点击"无效原因"单元格可直接修改</div>'];
-    h.push('<table class="grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>提交时间</th><th>无效原因</th><th>操作</th></tr>');
+    h.push('<table class="grid invalid-grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>提交时间</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
       h.push('<tr><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
         + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
@@ -742,10 +750,10 @@
         + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
         + '<td>' + hl(s.submit_time_raw || '—', kws) + '</td>'
         + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
-        + '<td class="ops"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button> '
+        + '<td class="ops"><div class="ops-stack"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button>'
         + '<button type="button" class="btn plain btn-min pending-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">'
-        + (s.audit_result ? '🕓 已待审核（点击取消）' : '🕓 待审核') + '</button> '
-        + '<button type="button" class="btn plain btn-min edit-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✏️ 修改</button></td></tr>');
+        + (s.audit_result ? '🕓 已待审核（点击取消）' : '🕓 待审核') + '</button>'
+        + '<button type="button" class="btn plain btn-min edit-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✏️ 修改</button></div></td></tr>');
     });
     h.push('</table>');
 

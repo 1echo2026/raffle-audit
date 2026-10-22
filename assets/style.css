@@ -201,6 +201,11 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .params .time-btn.set { border-color: var(--blue); color: var(--blue); background: #f0f5ff; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
+
+/* 无效名单:操作按钮竖排 + 奖品列宽约原来 3 倍(避免奖品名竖排) */
+.invalid-grid th:nth-child(8), .invalid-grid td:nth-child(8) { min-width: 180px; }
+.ops-stack { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+.ops-stack .btn { width: 100%; }
 /* 列宽拖拽把手(每列表头右边缘) */
 .col-resizer {
   position: absolute; top: 0; right: -5px; width: 10px; height: 100%;
