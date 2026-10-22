@@ -1008,6 +1008,7 @@
       groups: r.groups || {'进阶': [], '巅峰': []},
       params: r.params || {},
       stats: r.stats || {},
+      summary: r.summary || null,
       validPools: r.validPools || {}
     };
   }
@@ -1285,6 +1286,89 @@
     XLSX.writeFile(wb, poolName + '有效订单池.xlsx');
   }
 
+  // ---------- 宠粉数据总结子表(左红=巅峰奖池,右绿=进阶奖池) ----------
+  // 无 summary 时(旧历史存档)按当前数据兜底计算
+  function summaryFallback(r) {
+    var MIN = (r.params && r.params.minAmount) || 999;
+    var THR = (r.params && r.params.threshold) || 20000;
+    function bands(lo, hi) {
+      var phones = {}, people = {};
+      ['强基', '升学'].forEach(function (pn) {
+        var pool = r.validPools[pn] || {}, kept = pool.kept || [], m = pool.map || {};
+        kept.forEach(function (row) {
+          var amt = parseFloat(m.amount == null ? 0 : row[m.amount]) || 0;
+          if (!(amt >= lo) || (hi != null && amt >= hi)) return;
+          var ph = String(m.masked == null ? '' : row[m.masked]).trim();
+          var gh = String(m.gonghao == null ? '' : row[m.gonghao]).trim();
+          if (/^1\d{10}$/.test(ph) || /^1\d{2}\*{4}\d{4}$/.test(ph)) phones[ph] = 1;
+          if (gh) people[gh] = 1;
+        });
+      });
+      return {phones: Object.keys(phones).length, people: Object.keys(people).length};
+    }
+    var allSubs = (r.validList || []).concat(r.invalidList || [], r.duplicates || []);
+    function part(pool) {
+      var subs = allSubs.filter(function (s) { return s.pool === pool; });
+      var gh = {};
+      subs.forEach(function (s) { if (s.gonghao) gh[s.gonghao] = 1; });
+      var act = {};
+      subs.forEach(function (s) { if (s.match === 'ok' && s.expected_pool === pool && s.phone) act[s.phone] = 1; });
+      return {times: subs.filter(function (s) { return !!s.phone; }).length,
+              people: Object.keys(gh).length, actual: Object.keys(act).length};
+    }
+    function build(o, p) {
+      return {orders: o.phones, people: o.people, times: p.times,
+              participants: p.people, actual: p.actual,
+              peopleRate: o.people ? p.people / o.people : 0,
+              timesRate: p.people ? p.actual / p.people : 0};
+    }
+    return {peak: build(bands(THR, null), part('巅峰')),
+            jj: build(bands(MIN, THR), part('进阶'))};
+  }
+  function summarySheet(sum, title) {
+    var rows = [
+      [title, '', '', title, ''],
+      ['巅峰奖池', '', '', '进阶奖池', ''],
+      ['出单数', sum.peak.orders, '', '出单数', sum.jj.orders],
+      ['出单人数', sum.peak.people, '', '出单人数', sum.jj.people],
+      ['参与人次', sum.peak.times, '', '参与人次', sum.jj.times],
+      ['参与人数', sum.peak.participants, '', '参与人数', sum.jj.participants],
+      ['实际参与人次', sum.peak.actual, '', '实际参与人次', sum.jj.actual],
+      ['人数参与率', sum.peak.peopleRate, '', '人数参与率', sum.jj.peopleRate],
+      ['人次参与率', sum.peak.timesRate, '', '人次参与率', sum.jj.timesRate]
+    ];
+    var ws = aoa(rows);
+    ws['!merges'] = [
+      {s: {r: 0, c: 0}, e: {r: 0, c: 1}}, {s: {r: 1, c: 0}, e: {r: 1, c: 1}},
+      {s: {r: 0, c: 3}, e: {r: 0, c: 4}}, {s: {r: 1, c: 3}, e: {r: 1, c: 4}}
+    ];
+    setColWidths(ws, [18, 14, 4, 18, 14]);
+    ws['!rows'] = [{hpt: 26}, {hpt: 22}];
+    var RED = 'FFD45C5C', GREEN = 'FF93BA5C';
+    var CELL = {alignment: {horizontal: 'center', vertical: 'center'}, border: BORDER};
+    for (var R = 0; R <= 8; R++) {
+      for (var C = 0; C <= 4; C++) {
+        if (C === 2) continue;
+        var addr = XLSX.utils.encode_cell({r: R, c: C});
+        var cell = ws[addr];
+        if (!cell) { cell = {t: 's', v: ''}; ws[addr] = cell; }
+        cell.s = {alignment: CELL.alignment, border: BORDER};
+      }
+    }
+    function head(addr, color) {
+      var c = ws[addr];
+      if (c) c.s = {fill: {fgColor: {rgb: color}}, font: {bold: true}, alignment: CELL.alignment, border: BORDER};
+    }
+    head('A1', RED); head('A2', RED); head('D1', GREEN); head('D2', GREEN);
+    // 人数参与率标签加粗(与模板一致)
+    ['A8', 'D8'].forEach(function (a) { if (ws[a]) ws[a].s = {font: {bold: true}, alignment: CELL.alignment, border: BORDER}; });
+    // 参与率以百分比显示
+    ['B8', 'B9', 'E8', 'E9'].forEach(function (a) {
+      if (ws[a]) { ws[a].t = 'n'; ws[a].z = '0.0%'; ws[a].s = {alignment: CELL.alignment, border: BORDER}; }
+    });
+    return ws;
+  }
+
   var AUDIT_COLS = ['序号','奖池(实际)','问卷昵称','中奖名单昵称','基地','真实姓名','出单手机号','奖项等级','奖品名称',
     '提交时间','出单账号ID','订单归属人姓名','归属人工号','工号有效订单行数','工号累计有效金额','工号达2万时间',
     '本手机号订单应属奖池','工号单笔最高金额','核销情况','备注'];
@@ -1489,13 +1573,15 @@
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, imageSheet(t1, t2, r.groups['巅峰'], r.groups['进阶']), '获奖名单（图片格式）');
     XLSX.utils.book_append_sheet(wb, detailSheet(r.groups['巅峰'], r.groups['进阶']), '中奖明细（奖品底表）');
+    var sum = r.summary || summaryFallback(r);
+    XLSX.utils.book_append_sheet(wb, summarySheet(sum, '第' + periodTag() + '期宠粉日总结（截止目前）'), '宠粉数据总结');
     XLSX.utils.book_append_sheet(wb, commSheet(r.communication), '异常名单沟通话术');
     XLSX.utils.book_append_sheet(wb, rankSheet(r), '单量审核名单');
     return wb;
   }
   function downloadAuditResult() {
     XLSX.writeFile(auditBook(), '第' + periodTag() + '期中奖名单审核结果.xlsx');
-    log('已导出: 第' + periodTag() + '期中奖名单审核结果.xlsx(4 个子表)');
+    log('已导出: 第' + periodTag() + '期中奖名单审核结果.xlsx(5 个子表)');
   }
 
   // 强基+升学有效订单池合并一个文件(两个子表),文件名带期数
@@ -1549,7 +1635,7 @@
     if (!lastResult) { alert('请先点击「开始审核」'); return; }
     var n = periodTag();
     document.getElementById('expPoolsLabel').textContent = '第' + n + '期有效订单池.xlsx(强基+升学两个子表)';
-    document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(4 个子表:获奖名单图片格式/中奖明细（奖品底表）/异常名单沟通话术/单量审核名单)';
+    document.getElementById('expAuditLabel').textContent = '第' + n + '期中奖名单审核结果.xlsx(5 个子表:获奖名单图片格式/中奖明细（奖品底表）/宠粉数据总结/异常名单沟通话术/单量审核名单)';
     document.getElementById('exportModal').style.display = 'flex';
   }
   function doExport() {

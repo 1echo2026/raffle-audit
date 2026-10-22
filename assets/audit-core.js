@@ -501,6 +501,7 @@
       } else {
         orderAgg[r.order_id] = {
           amount: r.amount, dt: r.dt, masked: r.masked, gonghao: r.gonghao,
+          account: r.account,
           pool: '进阶', cum_after: 0, direct_peak: false
         };
       }
@@ -764,7 +765,50 @@
       (reasons.length ? invalidList : validList).push(s);
     });
 
-    // 8) 姓名↔工号对照
+    // 8) 宠粉数据总结(巅峰/进阶两池的出单与参与指标)
+    var sumPeak = {phones: {}, people: {}}, sumJJ = {phones: {}, people: {}};
+    Object.keys(orderAgg).forEach(function (oid) {
+      var o = orderAgg[oid];
+      var ph = str(o.masked);
+      var okPh = /^1\d{10}$/.test(ph) || /^1\d{2}\*{4}\d{4}$/.test(ph);
+      var bucket;
+      if (o.amount >= THRESHOLD) bucket = sumPeak;
+      else if (o.amount >= MIN_AMT) bucket = sumJJ;
+      else return;
+      if (okPh) bucket.phones[ph] = 1;
+      // 出单人数 = 该金额区间内有出单的销售工号数(与"参与人数=工号数"同口径)
+      if (str(o.gonghao)) bucket.people[str(o.gonghao)] = 1;
+    });
+    function participate(pool) {
+      var subs = submissions.filter(function (s) { return s.pool === pool; });
+      var times = subs.filter(function (s) { return !!str(s.phone); }).length;
+      var ghSet = {};
+      subs.forEach(function (s) { if (s.gonghao) ghSet[s.gonghao] = 1; });
+      var actualSet = {};
+      subs.forEach(function (s) {
+        if (s.match === 'ok' && s.expected_pool === pool && s.phone) actualSet[s.phone] = 1;
+      });
+      return {times: times, people: Object.keys(ghSet).length, actual: Object.keys(actualSet).length};
+    }
+    function rate(a, b) { return b > 0 ? a / b : 0; }
+    function buildSum(orders, part) {
+      var outCount = Object.keys(orders.phones).length;
+      var outPeople = Object.keys(orders.people).length;
+      return {
+        orders: outCount, people: outPeople,
+        times: part.times, participants: part.people, actual: part.actual,
+        // 人数参与率 = 参与人数 ÷ 出单人数;人次参与率 = 实际参与人次 ÷ 参与人数
+        peopleRate: rate(part.people, outPeople),
+        timesRate: rate(part.actual, part.people)
+      };
+    }
+    var partPeak = participate('巅峰'), partJJ = participate('进阶');
+    var summary = {
+      peak: buildSum(sumPeak, partPeak),
+      jj: buildSum(sumJJ, partJJ)
+    };
+
+    // 9) 姓名↔工号对照
     var nameGh = {}, ghPhones = {};
     validRows.forEach(function (r) {
       if (r.sales_name && r.gonghao) (nameGh[r.sales_name] = nameGh[r.sales_name] || {})[r.gonghao] = 1;
@@ -906,6 +950,7 @@
       invalidList: invalidList,
       duplicates: duplicates,
       communication: communication,
+      summary: summary,
       nameGhRows: nameGhRows,
       ghStats: ghStats,
       groups: {'巅峰': tierGroups('巅峰', 4), '进阶': tierGroups('进阶', 8)}
