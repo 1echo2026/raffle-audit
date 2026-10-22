@@ -242,6 +242,14 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .btn.fail-btn:hover { background: #ffccc7; }
 .btn.pending-btn { border-color: #ffe58f; color: var(--gold); background: #fffbe6; }
 .btn.pending-btn:hover { background: #fff1b8; }
+.btn.dup-pass-btn { border-color: #b7eb8f; color: var(--green); background: #f6ffed; }
+.btn.dup-pass-btn:hover { background: #d9f7be; }
+
+/* 无效名单下方的重复剔除区块 */
+.dup-block { margin-top: 18px; border-top: 2px dashed #f0c36d; padding-top: 12px; }
+.dup-title { font-weight: bold; font-size: 13.5px; color: #b26a00; margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dup-title .muted { font-weight: normal; font-size: 12px; }
+.dup-row td { background: #fffdf5; }
 .cf-sel {
   padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 6px;
   font-size: 12.5px; background: #fff; max-width: 200px;

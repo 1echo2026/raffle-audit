@@ -672,7 +672,16 @@
       }
       idxs.forEach(function (i) {
         if (i === earliest) return;
+        var kept = submissions[earliest];
         submissions[i].is_duplicate = true;
+        // 记录被保留的那条信息(奖品/姓名/提交时间),供页面"重复剔除"区块展示对照
+        submissions[i].dup_kept = {
+          form_i: kept.form_i, pool: kept.pool, base: kept.base,
+          real_name: kept.real_name, nickname: kept.nickname,
+          prize_name: kept.prize_name, prize_level: kept.prize_level,
+          submit_time_raw: kept.submit_time_raw, phone: kept.phone
+        };
+        submissions[i].dup_group_size = idxs.length;
         duplicates.push(submissions[i]);
       });
     });
@@ -798,6 +807,7 @@
         return {base: b, name: s.real_name, gonghao: s.gonghao, phone: s.phone,
                 nickname: s.nickname, redeem: s.win_redeem,
                 order_time: s.order_time || '', total_amount: s.total_amount || 0,
+                submit_time: s.submit_time_raw || '',
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0};
