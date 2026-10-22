@@ -502,6 +502,128 @@
     });
     return s;
   }
+  // ---------- 表格列宽手动拖拽(无效/明细/话术/弹窗表通用,宽度记忆在本机) ----------
+  var COLW_KEY = 'raffle_colwidths_v1';
+  var colWidthStore = (function () { try { return JSON.parse(localStorage.getItem(COLW_KEY)) || {}; } catch (e) { return {}; } })();
+  function saveColWidthStore() { try { localStorage.setItem(COLW_KEY, JSON.stringify(colWidthStore)); } catch (e) {} }
+  function gridKey(tbl) {
+    var box = tbl.parentElement;
+    while (box && !box.id) box = box.parentElement;
+    return box ? box.id : 'grid';
+  }
+  function thText(th) { return (th.textContent || '').trim(); }
+  function gridCols(tbl) {
+    var cg = tbl.querySelector('colgroup.grp');
+    return cg ? cg.children : null;
+  }
+  function setGridTableWidth(tbl) {
+    var cols = gridCols(tbl);
+    if (!cols) return;
+    var w = 0;
+    Array.prototype.forEach.call(cols, function (c) { w += parseFloat(c.style.width) || 0; });
+    if (w) tbl.style.width = w + 'px';
+  }
+  // 冻结当前列宽(转为 fixed 布局 + colgroup),之后拖拽只改对应 col
+  function freezeGrid(tbl) {
+    if (gridCols(tbl)) return;
+    var heads = tbl.rows[0] ? tbl.rows[0].cells : null;
+    if (!heads) return;
+    var cg = document.createElement('colgroup');
+    cg.className = 'grp';
+    Array.prototype.forEach.call(heads, function (th) {
+      var c = document.createElement('col');
+      c.style.width = Math.round(th.getBoundingClientRect().width) + 'px';
+      cg.appendChild(c);
+    });
+    tbl.insertBefore(cg, tbl.firstChild);
+    tbl.style.tableLayout = 'fixed';
+    setGridTableWidth(tbl);
+  }
+  function applySavedGridWidths(tbl) {
+    var saved = colWidthStore[gridKey(tbl)] || {};
+    var heads = tbl.rows[0] ? tbl.rows[0].cells : null;
+    if (!heads) return;
+    var has = false;
+    Array.prototype.forEach.call(heads, function (th) { if (saved[thText(th)]) has = true; });
+    if (!has) return;
+    freezeGrid(tbl);
+    var cols = gridCols(tbl);
+    Array.prototype.forEach.call(heads, function (th, i) {
+      var w = saved[thText(th)];
+      if (w && cols[i]) cols[i].style.width = w + 'px';
+    });
+    setGridTableWidth(tbl);
+  }
+  function bindGridResize(tbl) {
+    if (tbl.getAttribute('data-resizable') === '1') return;
+    tbl.setAttribute('data-resizable', '1');
+    var heads = tbl.rows[0] ? tbl.rows[0].cells : null;
+    if (!heads) return;
+    Array.prototype.forEach.call(heads, function (th) {
+      var h = document.createElement('span');
+      h.className = 'col-resizer';
+      h.title = '拖动调整列宽 · 双击恢复自动列宽';
+      th.appendChild(h);
+    });
+    applySavedGridWidths(tbl);
+    tbl.addEventListener('mousedown', function (e) {
+      var h = e.target;
+      if (!h.classList || !h.classList.contains('col-resizer')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var th = h.parentElement, idx = th.cellIndex;
+      freezeGrid(tbl);
+      var cols = gridCols(tbl);
+      if (!cols || !cols[idx]) return;
+      var startW = parseFloat(cols[idx].style.width) || th.getBoundingClientRect().width;
+      var startX = e.clientX;
+      h.classList.add('dragging');
+      document.body.classList.add('resizing-cols');
+      function move(ev) {
+        var w = Math.max(40, Math.min(900, startW + ev.clientX - startX));
+        cols[idx].style.width = w + 'px';
+        setGridTableWidth(tbl);
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        h.classList.remove('dragging');
+        document.body.classList.remove('resizing-cols');
+        var key = gridKey(tbl);
+        (colWidthStore[key] = colWidthStore[key] || {})[thText(th)] = Math.round(parseFloat(cols[idx].style.width) || 0);
+        saveColWidthStore();
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    tbl.addEventListener('dblclick', function (e) {
+      var h = e.target;
+      if (!h.classList || !h.classList.contains('col-resizer')) return;
+      e.preventDefault();
+      delete colWidthStore[gridKey(tbl)];
+      saveColWidthStore();
+      var cg = tbl.querySelector('colgroup.grp');
+      if (cg) cg.parentNode.removeChild(cg);
+      tbl.style.tableLayout = '';
+      tbl.style.width = '';
+    });
+  }
+  function enhanceGrids(root) {
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('table.grid'), bindGridResize);
+  }
+  // 各结果表每次重渲染后自动挂上拖拽把手(并恢复记忆的列宽)
+  function watchGrids() {
+    ['previewDetail', 'previewInvalid', 'previewComm', 'modalBody'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      enhanceGrids(el);
+      if (window.MutationObserver) {
+        new MutationObserver(function () { enhanceGrids(el); }).observe(el, {childList: true});
+      }
+    });
+  }
+
   function detailFields(d) {
     return [d.pool, d.base, d.name, d.gh, d.phone, d.lvText, d.prize, d.green || '',
             d.submit == null ? '' : String(d.submit),
@@ -1687,6 +1809,7 @@
   // ---------- 绑定 ----------
   document.addEventListener('DOMContentLoaded', function () {
     renderSlots();
+    watchGrids();
     var zone = document.getElementById('dropzone');
     var input = document.getElementById('fileInput');
     input.addEventListener('change', function () { handleFiles(input.files); });
@@ -1973,6 +2096,26 @@
       getHistory: loadHistory,
       saveHistoryNow: saveHistory,
       updateTimeBtns: updateTimeBtns,
+      watchGrids: watchGrids,
+      enhanceGrids: enhanceGrids,
+      getColWidths: function () { return colWidthStore; },
+      resetColWidths: function (key) {
+        if (key) delete colWidthStore[key]; else colWidthStore = {};
+        saveColWidthStore();
+        ['previewDetail', 'previewInvalid', 'previewComm', 'modalBody'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          Array.prototype.forEach.call(el.querySelectorAll('table.grid'), function (tbl) {
+            tbl.removeAttribute('data-resizable');
+            var cg = tbl.querySelector('colgroup.grp');
+            if (cg) cg.parentNode.removeChild(cg);
+            tbl.style.tableLayout = '';
+            tbl.style.width = '';
+            Array.prototype.forEach.call(tbl.querySelectorAll('.col-resizer'), function (h) { h.parentNode.removeChild(h); });
+          });
+          enhanceGrids(el);
+        });
+      },
       awardTitle: function (poolName) { return awardTitle(poolName); }
     };
   });

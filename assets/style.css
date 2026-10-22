@@ -201,6 +201,21 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 .params .time-btn.set { border-color: var(--blue); color: var(--blue); background: #f0f5ff; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
+/* 列宽拖拽把手(每列表头右边缘) */
+.col-resizer {
+  position: absolute; top: 0; right: -5px; width: 10px; height: 100%;
+  cursor: col-resize; z-index: 4;
+}
+.col-resizer::after {
+  content: ''; position: absolute; left: 4px; top: 15%; height: 70%;
+  width: 1px; background: #c3cee5;
+}
+.col-resizer:hover::after, .col-resizer.dragging::after {
+  background: var(--blue); width: 2px; left: 3px;
+}
+body.resizing-cols, body.resizing-cols * {
+  cursor: col-resize !important; user-select: none !important;
+}
 .green-tag { color: var(--green); font-weight: bold; }
 .modal-narrow { width: min(560px, 94vw); }
 .exp-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
