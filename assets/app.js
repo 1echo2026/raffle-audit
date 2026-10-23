@@ -217,6 +217,7 @@
   // ---------- 运行 ----------
   // ---------- 与上次同一组文件:询问是否在上次记录基础上继续 ----------
   var LAST_SIG_KEY = 'raffle_last_filesig_v1';
+  var MANUAL_KEY = 'raffle_last_manual_v1';   // 最近一次人工处理(与历史存档分开,避免未手动存档时丢失)
   var runDecision = null;   // 'continue' | 'fresh'(仅本次审核有效)
   var contInfo = null;      // {prevTs, prevStats, added} 供结果页提示
   function currentFileSig() {
@@ -231,6 +232,23 @@
       if (h[i].fileSig === sig && h[i].result) return h[i];
     }
     return null;
+  }
+  function loadManual() {
+    try { return JSON.parse(localStorage.getItem(MANUAL_KEY)) || null; } catch (e) { return null; }
+  }
+  // 每次人工处理(通过/fail/待审核/话术修改)后立即落盘,不依赖用户点「保存当前审核结果」
+  function persistManual() {
+    var sig = currentFileSig();
+    if (!sig) return;
+    try {
+      localStorage.setItem(MANUAL_KEY, JSON.stringify({
+        sig: sig, ts: new Date().toLocaleString(),
+        overrides: overrides, commEdits: commEdits
+      }));
+    } catch (e) {}
+  }
+  function clearManual() {
+    try { localStorage.removeItem(MANUAL_KEY); } catch (e) {}
   }
   // 记录身份键:优先手机号,无手机号时用 姓名+提交时间,保证新增行判断稳定
   function recKey(x) {
@@ -280,6 +298,47 @@
     });
     return {added: added, restored: restored};
   }
+  // 仅统计「本次新增」:与上次存档比对行是否已存在,不恢复任何人工裁决
+  function markAddedOnly(snap, fresh) {
+    var prevMap = {}, prevFi = {};
+    ['validList', 'invalidList', 'duplicates'].forEach(function (k) {
+      (snap[k] || []).forEach(function (p) {
+        var rk = recKey(p);
+        if (!prevMap[rk]) prevMap[rk] = p;
+        if (p.form_i != null) prevFi[p.form_i] = p;
+      });
+    });
+    var all = (fresh.validList || []).concat(fresh.invalidList || [], fresh.duplicates || []);
+    var added = 0;
+    all.forEach(function (s) {
+      var p = null;
+      if (s.form_i != null && prevFi[s.form_i] && recKey(prevFi[s.form_i]) === recKey(s)) p = prevFi[s.form_i];
+      if (!p) p = prevMap[recKey(s)];
+      if (!p) added++;
+    });
+    return {added: added, all: all};
+  }
+  // 套用最近一次人工处理(优先于历史存档,可能比存档更新)
+  function applyManual(man, all) {
+    var touched = {};
+    var ov = man.overrides || {};
+    Object.keys(ov).forEach(function (fi) {
+      var s = all.filter(function (x) { return String(x.form_i) === fi; })[0];
+      if (!s) return;
+      overrides[s.form_i] = ov[fi];
+      s.is_carry = true;
+      touched[fi] = 1;
+    });
+    var ce = man.commEdits || {};
+    Object.keys(ce).forEach(function (fi) {
+      var s = all.filter(function (x) { return String(x.form_i) === fi; })[0];
+      if (!s) return;
+      commEdits[s.form_i] = ce[fi];
+      s.is_carry = true;
+      touched[fi] = 1;
+    });
+    return Object.keys(touched).length;
+  }
   function run() {
     var missing = SLOTS.filter(function (s) { return !files[s.key]; }).map(function (s) { return s.label; });
     if (missing.length) { alert('还缺少文件:\n' + missing.join('\n')); return; }
@@ -293,7 +352,7 @@
     runDecision = null;
   }
   function doRun(mode, sig) {
-    if (mode === 'fresh') { overrides = {}; commEdits = {}; }
+    if (mode === 'fresh') { overrides = {}; commEdits = {}; clearManual(); }
     log(mode === 'continue' ? '开始审核(沿用上次记录，保留人工处理)…' :
         (mode === 'fresh' ? '开始审核(全部重新审核，不沿用上次人工处理)…' : '开始审核…'));
     var result;
@@ -307,10 +366,20 @@
     contInfo = null;
     if (mode === 'continue') {
       var prev = findPrevBySig(sig);
-      if (prev) {
-        var res = restoreFromSnapshot(prev.result, result, prev.commEditSnap);
-        contInfo = {prevTs: prev.ts, added: res.added, restored: res.restored};
-        log('已沿用上次记录(' + prev.ts + ')：恢复人工处理 ' + res.restored + ' 条(淡紫色标出)，本次新增 ' +
+      var man = loadManual();
+      if (man && man.sig !== sig) man = null;
+      if (prev || man) {
+        overrides = {}; commEdits = {};
+        var res;
+        if (man) {
+          // 以「最近一次人工处理」为准(用户可能处理完还没手动存档)
+          var mk = markAddedOnly(prev ? prev.result : result, result);
+          res = {added: mk.added, restored: applyManual(man, mk.all)};
+        } else {
+          res = restoreFromSnapshot(prev.result, result, prev.commEditSnap);
+        }
+        contInfo = {prevTs: (man && man.ts) || prev.ts, added: res.added, restored: res.restored};
+        log('已沿用上次记录(' + contInfo.prevTs + ')：恢复人工处理 ' + res.restored + ' 条(淡紫色标出)，本次新增 ' +
             res.added + ' 条', 'ok');
       }
     }
@@ -1069,6 +1138,7 @@
     }
     applyOverrides(lastResult);
     renderAll(lastResult);
+    persistManual();
   }
 
   // 无效名单"待审核":话术表审核结果列填"待审核通过补发"
@@ -1087,6 +1157,7 @@
     applyOverrides(lastResult);
     renderInvalid(lastResult);
     renderComm(lastResult);
+    persistManual();
   }
 
   function renderAll(r) {
@@ -1169,6 +1240,7 @@
     overrides[fi] = {green_code: code, manual: true};
     applyOverrides(lastResult);
     renderAll(lastResult);
+    persistManual();
     log('✅ 通过: ' + (s.real_name || s.nickname) + '(' + (s.phone || '') + ') 已转入中奖名单,凭证码 ' + code, 'ok');
     return code;
   }
@@ -1516,6 +1588,7 @@
     if (patch[field] === v) return;
     patch[field] = v;
     renderComm(lastResult);
+    persistManual();
     log('已修改话术表(' + ({cbase: '基地', cname: '姓名', cgh: '工号', cphone: '出单手机号',
       creason: '异常原因', cscript: '处理话术', caudit: '报备审核'}[f] || f) + '): ' + (v || '(已清空)'));
   }
