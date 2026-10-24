@@ -12,6 +12,9 @@
   var GMV = null;    // 同上
   var RESULT = null; // {rows, monthDays, periodDays, period, totals}
 
+  var GOAL_KEY = 'raffle_team_goal_v1';   // 已保存的月目标(团队 + 目标)
+  var clearTimer = null;                  // 「清除」二次确认计时器
+
   // ---------- 基础 ----------
   function str(v) { return v === null || v === undefined ? '' : String(v).trim(); }
   function esc(s) {
@@ -136,6 +139,11 @@
     return str((tbl.header || [])[idx]);
   }
   async function handleGoal(file) {
+    if (loadSavedGoal()) {
+      log('月目标已保存并锁定，如需上传新表请先点「清除已保存」', 'err');
+      refreshGoalSaveUI();
+      return;
+    }
     if (!/\.xlsx?$/i.test(file.name)) { log('只支持 .xlsx / .xls: ' + file.name, 'err'); return; }
     var sheets = await readWorkbook(file);
     var tbl = detectTable(sheets, 'goal');
@@ -153,6 +161,7 @@
       '团队列：<b>' + esc(colText(tbl, tbl.map.team)) + '</b> · 月目标列：<b>' + esc(colText(tbl, tbl.map.value)) + '</b>' +
       (tbl.map.base >= 0 ? ' · 基地列：<b>' + esc(colText(tbl, tbl.map.base)) + '</b>' : '') +
       '<br>有效团队 ' + n + ' 个';
+    refreshGoalSaveUI();
     log('已载入月目标表: ' + file.name + '（' + tbl.sheetName + '，团队 ' + n + ' 个）', 'ok');
   }
   async function handleGmv(file) {
@@ -211,6 +220,125 @@
       ]);
     });
     return agg;
+  }
+
+  // ---------- 月目标保存(本机浏览器) ----------
+  function loadSavedGoal() {
+    try {
+      var o = JSON.parse(localStorage.getItem(GOAL_KEY));
+      if (o && o.v === 1 && Array.isArray(o.targets) && o.targets.length) return o;
+    } catch (e) {}
+    return null;
+  }
+  // 把保存的 {team, base, target} 还原成和识别结果同构的表对象
+  function savedGoalTable(saved) {
+    return {
+      fileName: saved.fileName || '已保存月目标.xlsx',
+      sheetName: '已保存', headerIdx: 0, score: saved.targets.length,
+      header: ['基地', '高经团队', '月目标'],
+      dataRows: saved.targets.map(function (t) { return [t.base || '', t.team, t.target]; }),
+      map: {team: 1, value: 2, base: 0, manager: -1, sales: -1},
+      saved: true, savedTs: saved.ts || ''
+    };
+  }
+  function goalStats(tbl) {
+    var m = buildTargets(tbl), names = Object.keys(m), sum = 0;
+    names.forEach(function (k) { sum += m[k].target; });
+    return {count: names.length, sum: Math.round(sum * 100) / 100};
+  }
+  function applySavedGoal(saved) {
+    GOAL = savedGoalTable(saved);
+    var st = goalStats(GOAL);
+    document.getElementById('goalFiles').innerHTML = '<div>🔒 ' + esc(saved.fileName || '已保存月目标') + '（本机已保存）</div>';
+    var box = document.getElementById('goalDetected');
+    box.style.display = 'block';
+    box.innerHTML = '使用已保存的月目标 · 保存时间 <b>' + esc(saved.ts || '—') + '</b><br>' +
+      '有效团队 <b>' + st.count + ' 个</b> · 月目标合计 <b>¥' + money(st.sum) + '</b>';
+  }
+  function refreshGoalSaveUI() {
+    var saved = loadSavedGoal();
+    var drop = document.getElementById('goalDrop');
+    var main = document.getElementById('goalDropMain');
+    var sub = document.getElementById('goalDropSub');
+    var saveBtn = document.getElementById('btnSaveGoal');
+    var clearBtn = document.getElementById('btnClearGoal');
+    var state = document.getElementById('goalSaveState');
+    if (!drop || !saveBtn) return;
+    if (saved) {
+      drop.classList.add('locked');
+      main.textContent = '🔒 月目标已保存并锁定';
+      sub.textContent = '如需更换月目标表，请先点「清除已保存」';
+      saveBtn.disabled = true;
+      clearBtn.disabled = false;
+      state.className = 'save-state on';
+      state.textContent = '已保存 · 每次打开自动使用';
+      return;
+    }
+    drop.classList.remove('locked');
+    main.textContent = '📂 点击选择或拖入「高经团队月目标」Excel';
+    sub.textContent = '需含「高经团队 / 高经」与「月目标 / 销售直推目标」两列';
+    clearBtn.disabled = true;
+    if (GOAL) {
+      var st = goalStats(GOAL);
+      saveBtn.disabled = false;
+      state.className = 'save-state warn';
+      state.textContent = '本次已载入 ' + st.count + ' 个团队 · 尚未保存';
+    } else {
+      saveBtn.disabled = true;
+      state.className = 'save-state';
+      state.textContent = '未保存';
+    }
+  }
+  function saveGoal() {
+    if (!GOAL) { log('请先上传月目标表再保存', 'err'); return null; }
+    if (GOAL.saved) { log('月目标已保存，无需重复保存', 'err'); return null; }
+    var m = buildTargets(GOAL);
+    var names = Object.keys(m);
+    if (!names.length) { log('月目标表中没有有效团队，无法保存', 'err'); return null; }
+    var payload = {
+      v: 1,
+      ts: new Date().toLocaleString(),
+      fileName: GOAL.fileName || '月目标表.xlsx',
+      sheetName: GOAL.sheetName || '',
+      targets: names.map(function (k) {
+        return {team: k, base: m[k].base || '', target: Math.round(m[k].target * 100) / 100};
+      })
+    };
+    try { localStorage.setItem(GOAL_KEY, JSON.stringify(payload)); }
+    catch (e) { log('保存失败：浏览器本地存储不可用或空间不足', 'err'); return null; }
+    applySavedGoal(payload);
+    refreshGoalSaveUI();
+    var sum = 0;
+    payload.targets.forEach(function (t) { sum += t.target; });
+    log('已保存月目标: ' + payload.targets.length + ' 个团队，合计 ¥' + money(sum) + '，下次打开页面自动使用。', 'ok');
+    return payload;
+  }
+  function clearSavedGoal() {
+    var saved = loadSavedGoal();
+    var btn = document.getElementById('btnClearGoal');
+    if (!saved) { log('当前没有已保存的月目标', 'err'); return false; }
+    if (!clearTimer) {
+      clearTimer = setTimeout(function () {
+        clearTimer = null;
+        btn.textContent = '清除已保存';
+        btn.classList.remove('danger-armed');
+      }, 4000);
+      btn.textContent = '再点一次确认清除';
+      btn.classList.add('danger-armed');
+      log('再次点击「再点一次确认清除」将删除已保存的月目标。', 'err');
+      return false;
+    }
+    clearTimeout(clearTimer);
+    clearTimer = null;
+    btn.textContent = '清除已保存';
+    btn.classList.remove('danger-armed');
+    try { localStorage.removeItem(GOAL_KEY); } catch (e) {}
+    GOAL = null;
+    document.getElementById('goalFiles').innerHTML = '';
+    document.getElementById('goalDetected').style.display = 'none';
+    refreshGoalSaveUI();
+    log('已清除保存的月目标，现在可以上传新的月目标表。', 'ok');
+    return true;
   }
 
   function compute() {
@@ -373,10 +501,13 @@
       return null;
     }
   }
-  function bindDrop(dropId, inputId, handler) {
+  function bindDrop(dropId, inputId, handler, canPick) {
     var drop = document.getElementById(dropId);
     var input = document.getElementById(inputId);
-    drop.addEventListener('click', function () { input.click(); });
+    drop.addEventListener('click', function () {
+      if (canPick && !canPick()) return;
+      input.click();
+    });
     drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('drag'); });
     drop.addEventListener('dragleave', function () { drop.classList.remove('drag'); });
     drop.addEventListener('drop', function (e) {
@@ -393,8 +524,27 @@
     var now = new Date();
     var dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     document.getElementById('monthDays').value = dim;
-    bindDrop('goalDrop', 'goalInput', handleGoal);
+    bindDrop('goalDrop', 'goalInput', handleGoal, function () {
+      if (loadSavedGoal()) {
+        log('月目标已保存并锁定，如需上传新表请先点「清除已保存」', 'err');
+        return false;
+      }
+      return true;
+    });
     bindDrop('gmvDrop', 'gmvInput', handleGmv);
+
+    document.getElementById('btnSaveGoal').addEventListener('click', saveGoal);
+    document.getElementById('btnClearGoal').addEventListener('click', clearSavedGoal);
+
+    // 打开页面：若本机存过月目标，直接载入并锁定
+    var saved = loadSavedGoal();
+    if (saved) {
+      applySavedGoal(saved);
+      refreshGoalSaveUI();
+      log('已读取本机保存的月目标（' + (saved.ts || '—') + '，' + saved.targets.length + ' 个团队），可直接上传 GMV 表开始核算。', 'ok');
+    } else {
+      refreshGoalSaveUI();
+    }
 
     document.getElementById('btnRun').addEventListener('click', runCompute);
     document.getElementById('btnDownload').addEventListener('click', exportExcel);
@@ -405,7 +555,12 @@
       loadGoal: handleGoal,
       loadGmv: handleGmv,
       run: runCompute,
-      getResult: function () { return RESULT; }
+      getResult: function () { return RESULT; },
+      getGoal: function () { return GOAL; },
+      saveGoal: saveGoal,
+      clearGoal: clearSavedGoal,
+      loadSavedGoal: loadSavedGoal,
+      applySavedGoal: applySavedGoal
     };
   });
 })();

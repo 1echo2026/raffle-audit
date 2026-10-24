@@ -22,6 +22,18 @@
   .formula { background: #f8faff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 10px 0 12px; line-height: 1.9; }
   .formula b { color: var(--blue); }
   .formula input { width: 68px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; text-align: center; }
+  /* 月目标保存 */
+  .goal-save {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border);
+  }
+  .goal-save .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .goal-save .save-state { font-size: 12px; color: var(--muted); }
+  .goal-save .save-state.on { color: var(--green); font-weight: 600; }
+  .goal-save .save-state.warn { color: #d46b08; }
+  .btn.danger-armed { background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322; }
+  .dz-sm.locked { border-color: #e0e0e0; background: #f5f5f5; color: #8c8c8c; cursor: not-allowed; }
+  .dz-sm.locked:hover { border-color: #e0e0e0; background: #f5f5f5; }
   #teamTableWrap { max-height: 640px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
   #teamTable td.team { text-align: left; }
   .bar-wrap { background: #f0f0f0; border-radius: 8px; height: 10px; overflow: hidden; min-width: 90px; }
@@ -71,12 +83,17 @@
       <div class="up-box">
         <h4>① 高经团队月目标表 <span class="muted">(团队 + 月目标)</span></h4>
         <div class="dz-sm" id="goalDrop">
-          <div>📂 点击选择或拖入「高经团队月目标」Excel</div>
-          <div class="muted">需含「高经团队 / 高经」与「月目标 / 销售直推目标」两列</div>
+          <div id="goalDropMain">📂 点击选择或拖入「高经团队月目标」Excel</div>
+          <div class="muted" id="goalDropSub">需含「高经团队 / 高经」与「月目标 / 销售直推目标」两列</div>
         </div>
         <input type="file" id="goalInput" accept=".xlsx,.xls" style="display:none">
         <div class="files" id="goalFiles"></div>
         <div class="detected" id="goalDetected" style="display:none"></div>
+        <div class="goal-save">
+          <button id="btnSaveGoal" class="btn primary btn-min" disabled>💾 保存月目标</button>
+          <button id="btnClearGoal" class="btn plain btn-min" disabled>清除已保存</button>
+          <span id="goalSaveState" class="save-state">未保存</span>
+        </div>
       </div>
       <div class="up-box">
         <h4>② 有数看板 GMV 表 <span class="muted">(高经 + 转化金额)</span></h4>
@@ -108,7 +125,8 @@
     </div>
     <div class="rules muted">
       数透口径：按「高经团队」汇总 GMV 表中的转化金额；月目标取自月目标表，同名团队多行时累加。<br>
-      排名：按目标完成度从高到低；未设月目标的团队排在最后并标注「未设目标」，不参与排名。第一名整行高亮并显示 🏆。
+      排名：按目标完成度从高到低；未设月目标的团队排在最后并标注「未设目标」，不参与排名。第一名整行高亮并显示 🏆。<br>
+      月目标可点「💾 保存月目标」存入本机浏览器，下次打开页面自动带出；要换新的月目标表，先点「清除已保存」。
     </div>
     <button id="btnRun" class="btn primary">▶ 开始核算</button>
     <div id="log" class="log"></div>
