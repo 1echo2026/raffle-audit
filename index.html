@@ -35,13 +35,13 @@
     <p class="panel-sub">分四步配置活动规则,按从左到右顺序填写</p>
 
     <div class="stepbar">
-      <div class="sb-step active"><span class="sb-num">1</span><span class="sb-label">活动信息</span></div>
+      <div class="sb-step active"><span class="sb-num">1</span><div class="sb-text"><span class="sb-label">活动信息</span><span class="sb-sub">本期名称与期数</span></div></div>
       <span class="sb-link"></span>
-      <div class="sb-step"><span class="sb-num">2</span><span class="sb-label">时间范围</span></div>
+      <div class="sb-step"><span class="sb-num">2</span><div class="sb-text"><span class="sb-label">时间范围</span><span class="sb-sub">支付时间与问卷时间</span></div></div>
       <span class="sb-link"></span>
-      <div class="sb-step"><span class="sb-num">3</span><span class="sb-label">有效判定</span></div>
+      <div class="sb-step"><span class="sb-num">3</span><div class="sb-text"><span class="sb-label">有效判定</span><span class="sb-sub">金额与渠道前缀</span></div></div>
       <span class="sb-link"></span>
-      <div class="sb-step"><span class="sb-num">4</span><span class="sb-label">排行审核</span></div>
+      <div class="sb-step"><span class="sb-num">4</span><div class="sb-text"><span class="sb-label">排行审核</span><span class="sb-sub">单量排行排序</span></div></div>
     </div>
 
     <div class="param-grid">
@@ -60,16 +60,16 @@
       </section>
 
       <section class="param-card">
-        <div class="pc-head"><span class="pc-num">2</span><span class="pc-desc">设置问卷与订单的统计时段</span></div>
-        <div class="pc-field">
-          <span class="pc-label">问卷提交时间范围</span>
-          <button type="button" class="btn plain time-btn" id="btnTimeForm">⏱ 不限 ~ 不限</button>
-          <p class="pc-hint">只统计这段时间内提交的问卷,不设置则不限。</p>
-        </div>
+        <div class="pc-head"><span class="pc-num">2</span><span class="pc-desc">设置订单支付与问卷提交时间</span></div>
         <div class="pc-field">
           <span class="pc-label">订单支付时间范围</span>
           <button type="button" class="btn plain time-btn" id="btnTimeOrder">⏱ 不限 ~ 不限</button>
           <p class="pc-hint">只统计这段时间内支付的订单,不设置则不限。</p>
+        </div>
+        <div class="pc-field">
+          <span class="pc-label">问卷提交时间范围</span>
+          <button type="button" class="btn plain time-btn" id="btnTimeForm">⏱ 不限 ~ 不限</button>
+          <p class="pc-hint">只统计这段时间内提交的问卷,不设置则不限。</p>
         </div>
       </section>
 
@@ -102,6 +102,7 @@
         <div class="pc-status off" id="rankStatus"><span class="dot"></span>未勾选 · 明细表保持默认顺序</div>
       </section>
     </div>
+    <p class="param-foot muted">以上配置用于生成本期获奖名单标题与话术,并写入导出文件名。</p>
     <div class="rules-panel" id="rulesPanel">
       <div class="rules-head">
         <div class="rules-heading">
