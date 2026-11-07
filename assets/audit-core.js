@@ -68,6 +68,11 @@
     return p.length >= 7 ? p.slice(0, 3) + '****' + p.slice(-4) : p;
   }
 
+  // 姓名精确匹配用的归一化:去全部空白、转小写(中文姓名不区分大小写,英文姓名忽略空格)
+  function normName(v) {
+    return String(v === null || v === undefined ? '' : v).replace(/[\s\u3000\u00a0]+/g, '').toLowerCase();
+  }
+
   function parsePrizeText(text) {
     if (!text) return {level: null, name: ''};
     var s = String(text).trim();
@@ -104,6 +109,7 @@
       {field: 'product_id', label: '商品ID', required: false, aliases: ['商品ID', '商品编号', '产品ID']},
       {field: 'channel', label: '渠道', required: true, aliases: ['订单归属渠道', '渠道', '渠道前缀', '来源渠道']},
       {field: 'sales_name', label: '销售姓名', required: false, aliases: ['订单归属人姓名', '销售姓名', '销售', '顾问姓名']},
+      {field: 'ccid', label: 'ccid', required: false, aliases: ['ccid', 'CCID', '客户顾问ID', '顾问ID', '销售ID']},
       {field: 'gonghao', label: '工号', required: true, aliases: ['订单归属人工号', '工号', '销售工号', '员工工号', '员工编号']},
       {field: 'org', label: '订单归属组织架构', required: false, aliases: ['订单归属组织架构', '组织架构']}
     ],
@@ -114,6 +120,9 @@
       {field: 'prize', label: '所中奖项', required: true, aliases: ['所中奖项', '中奖奖品', '奖品', '奖项']},
       {field: 'submit_time', label: '提交时间', required: true, aliases: ['提交时间', '填写时间']},
       {field: 'base', label: '基地', required: false, aliases: ['您的真实基地', '真实基地', '基地', '所属基地']},
+      // 问卷填写的销售姓名:仅在手机号掩码撞号时用于二次匹配订单归属(精确匹配)
+      {field: 'sales_name', label: '问卷销售姓名', required: false,
+       aliases: ['销售姓名', '销售顾问姓名', '销售顾问', '您的销售姓名', '出单销售姓名', '顾问姓名', 'ccid', 'CCID', '销售']},
       {field: 'real_name', label: '真实姓名', required: true, aliases: ['您的真实名字', '真实名字', '真实姓名', '姓名']},
       {field: 'phone', label: '出单手机号', required: true, aliases: ['出单用户手机号/ID', '出单用户手机号', '出单手机号', '手机号']}
     ],
@@ -312,7 +321,7 @@
     var map = (info && info.map) || {};
     var start = (info && info.startRow) || 1;
     var iNk = map.nickname, iAv = map.avatar, iPz = map.prize, iSt = map.submit_time,
-        iBs = map.base, iNm = map.real_name, iPh = map.phone;
+        iBs = map.base, iSn = map.sales_name, iNm = map.real_name, iPh = map.phone;
     var out = [];
     for (var i = start; i < rows.length; i++) {
       var row = rows[i] || [];
@@ -323,7 +332,8 @@
       var dt = parseDt(rawSubmit);
       // 整行为空则跳过;手机号为空的行保留(列为无效"格式不正确"),避免修改清空后记录消失
       var isBlank = !str(row[iNk]) && !str(row[iAv]) && !str(row[iPz]) &&
-                    !str(rawSubmit) && !str(row[iBs]) && !str(row[iNm]) && !str(rawPhone);
+                    !str(rawSubmit) && !str(row[iBs]) && !str(row[iNm]) && !str(rawPhone) &&
+                    !(iSn != null && str(row[iSn]));
       if (isBlank) continue;
       out.push({
         pool: pool,
@@ -334,6 +344,7 @@
         submit_time_raw: dt ? fmtDt(dt) : str(rawSubmit),
         submit_dt: dt,
         base: iBs == null ? '' : str(row[iBs]),
+        form_sales: iSn == null ? '' : str(row[iSn]),
         real_name: iNm == null ? '' : str(row[iNm]),
         phone: cp.phone,
         phone_format_ok: cp.ok,
@@ -354,6 +365,7 @@
     if (r.indexOf('出单时间不符合当前抽奖日期') >= 0) return '出单时间不符合当前抽奖日期';
     if (r.indexOf('手机号格式不正确') >= 0) return '手机号格式错误';
     if (r.indexOf('手机号在订单池中查找不到') >= 0) return '手机号未查到';
+    if (r.indexOf('掩码撞号') >= 0) return '手机号掩码撞号';
     if (r.indexOf('非转介绍') >= 0) return '非转介绍';
     if (r.indexOf('非销售直推') >= 0) return '非销售直推';
     if (r.indexOf('未在有效订单池查找到') >= 0) return '订单未达有效条件';
@@ -454,6 +466,7 @@
         status: m.status == null ? '' : str(r[m.status]),
         product_id: m.product_id == null ? '' : str(r[m.product_id]),
         sales_name: m.sales_name == null ? '' : str(r[m.sales_name]),
+        ccid: m.ccid == null ? '' : str(r[m.ccid]),
         gonghao: str(r[m.gonghao]),
         channel: str(r[m.channel]),
         org: m.org == null ? '' : str(r[m.org])
@@ -568,7 +581,34 @@
       var rows = validIndex[maskPhone(s.phone)] || [];
       var acctSet = {};
       rows.forEach(function (r) { acctSet[r.account] = 1; });
-      if (!rows.length || Object.keys(acctSet).length > 1) return;
+      if (!rows.length) return;
+      if (Object.keys(acctSet).length > 1) {
+        // 加密手机号前3后4相同撞号:在候选订单里按「问卷销售姓名 = 订单池 ccid/销售名」二次精确匹配
+        var qName = normName(s.form_sales);
+        var cand = qName ? rows.filter(function (r) {
+          return normName(r.sales_name) === qName || normName(r.ccid) === qName;
+        }) : [];
+        var candAcct = {};
+        cand.forEach(function (r) { candAcct[r.account] = 1; });
+        // 候选清单(按账号去重),用于待审核时列出全部候选
+        var candList = [], seenAcct = {};
+        rows.forEach(function (r) {
+          if (seenAcct[r.account]) return;
+          seenAcct[r.account] = 1;
+          candList.push({account: r.account, ccid: r.ccid, name: r.sales_name || r.ccid, gonghao: r.gonghao});
+        });
+        if (qName && cand.length && Object.keys(candAcct).length === 1) {
+          rows = cand;   // 二次匹配唯一命中 → 归属该账号,按正常通过流程继续
+          s.masked_collision = {name: s.form_sales, ccid: cand[0].ccid || cand[0].gonghao || '',
+                                candidate_accounts: candList.length};
+          s.remark_note = '手机号掩码撞号，按销售姓名二次匹配唯一命中，ccid=' +
+            (cand[0].ccid || cand[0].gonghao || '—');
+        } else {
+          s.collision = {name: s.form_sales || '', candidates: candList,
+                         hit: !qName ? 'none' : (Object.keys(candAcct).length ? 'multi' : 'zero')};
+          return;
+        }
+      }
       s.match = 'ok';
       // 渠道归类: 匹配到的订单全部非销售直推渠道时,记为渠道异常(非销售直推/非转介绍)
       var xsRows = rows.filter(isXiaoshou);
@@ -743,7 +783,23 @@
               return toFloat(x[0][x[1].amount]) >= MIN_AMT &&
                      inRange(parseDt(x[0][x[1].pay_time]), ORDER_START, ORDER_END);
             });
-            if (hasQualified) {
+            if (s.collision) {
+              var candText = s.collision.candidates.map(function (c) {
+                var label = c.name || '未署名';
+                if (c.ccid && c.ccid !== c.name) label += '(ccid=' + c.ccid + ')';
+                if (c.account) label += '｜账号' + c.account;
+                if (c.gonghao) label += '｜工号' + c.gonghao;
+                return label;
+              }).join('；');
+              var head = '加密手机号掩码撞号（前3后4相同，共' + s.collision.candidates.length + '个账号的达标订单）';
+              if (s.collision.hit === 'none') {
+                reasons.push(head + '，问卷未填写销售姓名，无法唯一归属；候选：' + candText);
+              } else if (s.collision.hit === 'zero') {
+                reasons.push(head + '，按销售姓名「' + s.collision.name + '」二次匹配0条，无法唯一归属；候选：' + candText);
+              } else {
+                reasons.push(head + '，按销售姓名「' + s.collision.name + '」二次匹配后仍命中多个账号，无法唯一归属；候选：' + candText);
+              }
+            } else if (hasQualified) {
               reasons.push('未在有效订单池查找到（手机号在订单池匹配到多个账号的达标订单，无法唯一归属）');
             } else {
               reasons.push('未在有效订单池查找到（订单金额不足' + Math.round(MIN_AMT) + '元，未达活动有效条件）');
@@ -757,7 +813,8 @@
       if (s.match && !s.channel_bad && s.expected_pool && s.pool !== s.expected_pool) {
         reasons.push(s.peak_reason + '，但本次在' + s.pool + '奖池抽奖');
       }
-      if (s.abnormal_status) remark += '含' + s.abnormal_status + '订单，请核查';
+      if (s.remark_note) remark += s.remark_note;
+      if (s.abnormal_status) remark += (remark ? '；' : '') + '含' + s.abnormal_status + '订单，请核查';
       s.invalid_reasons = reasons.join('；');
       s.remark = remark;
       s.abnormal_type = classifyAbnormal(s);

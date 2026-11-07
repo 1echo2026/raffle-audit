@@ -17,6 +17,7 @@
     {type: '抽错奖池（应属巅峰）', script: '{姓名}老师好～ 我们正在核对宠粉日{期数}期{周期}抽奖~看到{手机号}截止在目前这单您累计出单累计金额已经超过2万，但是看您还是继续在进阶奖池抽的奖，我们的规则是当周累计出单金额≥2 万元后，本周期内的这一单以及后续新增的几单都是可以在巅峰奖池抽奖的，您现在去巅峰奖池再抽{单数}单即可~老师之后您累计出单金额大于2万了也可以跟咱们小助手说一下喔~'},
     {type: '抽错奖池（应属进阶）', script: '{姓名}老师好~我们正在核对宠粉日{期数}期{周期}抽奖~看到您{手机号}这一单在巅峰奖池抽的奖，但是经核算这一单出单累计金额还没有超过2万，我们的规则是当周累计出单金额≥2 万元后，本周期内的这一单以及后续新增出单才可以在巅峰奖池抽奖呢~老师多多加油，下次一定可以去巅峰奖池抽奖的~然后您现在再去进阶奖池抽1单~'},
     {type: '含退款/换课订单', script: '您好，您关联的出单订单存在退款/换课情况，按活动规则需进一步核查订单状态，请留意后续通知，谢谢配合！'},
+    {type: '手机号掩码撞号', script: '{姓名}老师好，正在核对{期数}期{周期}宠粉日抽奖，看到您填写的手机号{手机号}在后台对应到多笔订单，需要人工核实具体归属，核实后会尽快为您处理～'},
     {type: '其他异常', script: '您好，您的抽奖记录存在异常情况，需人工进一步核查，请留意后续通知，谢谢配合！'}
   ];
 
@@ -25,7 +26,16 @@
       var raw = global.localStorage && global.localStorage.getItem(TPL_KEY);
       if (raw) {
         var arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length) return arr;
+        if (Array.isArray(arr) && arr.length) {
+          // 补齐本版本新增的默认类型(只补新增项,不还原用户已删除的其他模板)
+          var has = {};
+          arr.forEach(function (t) { has[t.type] = 1; });
+          if (!has['手机号掩码撞号']) {
+            var add = DEFAULT_TEMPLATES.filter(function (t) { return t.type === '手机号掩码撞号'; })[0];
+            if (add) arr.push({type: add.type, script: add.script});
+          }
+          return arr;
+        }
       }
     } catch (e) { /* ignore */ }
     return JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
