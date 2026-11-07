@@ -1223,9 +1223,11 @@
     if (!box) return;
     var codes = loadGreenCodes();
     if (!codes.length) {
-      box.innerHTML = '<div class="muted">暂无绿色通道码。点"生成绿色通道码"后,把码告知抽奖人填写在问卷"出单用户手机号/ID"栏,审核时自动放行并出现在中奖名单。</div>';
+      box.classList.remove('has-codes');
+      box.innerHTML = '<div class="gc-tip">暂无绿色通道码。点「生成绿色通道码」后,把码告知抽奖人填写在问卷<b>「出单用户手机号/ID」</b>栏,审核时自动放行并出现在中奖名单。</div>';
       return;
     }
+    box.classList.add('has-codes');
     box.innerHTML = '<div class="muted">绿色通道码(填在问卷"出单手机号/ID"栏即直接通过):</div><div class="gc-list">' +
       codes.map(function (c) {
         return '<span class="gc-chip"><b>' + esc(c) + '</b>' +
