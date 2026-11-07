@@ -937,7 +937,9 @@
         + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
         + '<td class="ops"><div class="ops-stack"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button>'
         + '<button type="button" class="btn plain btn-min pending-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">'
-        + (s.audit_result ? '🕓 已待审核（点击取消）' : '🕓 待审核') + '</button>'
+        + (s.audit_result
+          ? '<span class="p-main">🕓 已待审核</span><span class="p-sub">点击取消</span>'
+          : '<span class="p-main">🕓 待审核</span>') + '</button>'
         + '<button type="button" class="btn plain btn-min edit-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✏️ 修改</button></div></td></tr>');
     });
     h.push('</table>');

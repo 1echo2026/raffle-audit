@@ -260,8 +260,12 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
 
 /* 无效名单:操作按钮竖排 + 奖品列宽约原来 3 倍(避免奖品名竖排) */
 .invalid-grid th:nth-child(8), .invalid-grid td:nth-child(8) { min-width: 180px; }
-.ops-stack { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
-.ops-stack .btn { width: 100%; }
+.ops-stack { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+/* 操作按钮固定为原宽度(约158px)的一半,切换待审核状态时宽度不变 */
+.ops-stack .btn { width: 80px; max-width: 100%; padding: 2px 4px; white-space: normal; }
+.pending-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; }
+.pending-btn .p-main { font-size: 11.5px; white-space: nowrap; }
+.pending-btn .p-sub { font-size: 10px; font-weight: normal; color: #8a6516; margin-top: 1px; white-space: nowrap; }
 /* 列宽拖拽把手(每列表头右边缘) */
 .col-resizer {
   position: absolute; top: 0; right: -5px; width: 10px; height: 100%;
