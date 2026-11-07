@@ -58,10 +58,71 @@
         <span class="chk-line"><input id="rankByCount" type="checkbox"> 明细表按工号出单单数从多到少排序(含单数列)</span>
       </label>
     </div>
-    <div class="rules muted">
-      判池规则:① 单笔订单金额≥2万 → 该单直接巅峰;② 同一<b>工号</b>名下多个出单手机号按支付时间累计,累计跨过2万的那笔及之后出单 → 巅峰,未满2万时 → 进阶;③ 中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池。一个手机号多次抽奖只保留提交最早的一次。<br>
-      归属匹配:先用<b>加密手机号</b>查订单池,命中单个账号 → 直接通过;同一加密手机号命中多个账号(前3后4撞号)时,用问卷填写的<b>销售姓名</b>与订单池 ccid/销售姓名精确匹配,唯一命中 → 归属该单并通过(备注记录 ccid),0 条或多条 → 转待审核并列出全部候选。<br>
-      时间范围:点上方按钮设置后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),不设置则不限。获奖名单标题自动用"活动周期名称"生成,无需单独填写标题。
+    <div class="rules-panel" id="rulesPanel">
+      <div class="rules-head">
+        <div class="rules-heading">
+          <h3>判池规则与归属匹配</h3>
+          <p class="rules-sub">本期订单按金额与归属判定奖池,规则如下</p>
+        </div>
+        <button type="button" class="rules-toggle" id="rulesToggle" aria-expanded="false" aria-controls="rulesBody">展开规则 <span class="chev">▾</span></button>
+      </div>
+      <div class="rules-body" id="rulesBody" hidden>
+        <div class="rules-grid">
+          <div class="rule-card">
+            <div class="rule-card-head"><span class="rule-ico">≡</span>判池规则</div>
+            <div class="rule-item">
+              <span class="ri-num">1</span>
+              <div class="ri-body">
+                <div class="ri-title">单笔直入巅峰</div>
+                <div class="ri-text">单笔订单金额 ≥ 2 万,该单直接进入对应奖池。</div>
+                <div class="ri-flow"><span class="ri-arrow">→</span> 单笔 ≥ 2 万 <span class="tag tag-peak">巅峰池</span></div>
+              </div>
+            </div>
+            <div class="rule-item">
+              <span class="ri-num">2</span>
+              <div class="ri-body">
+                <div class="ri-title">工号累计判定</div>
+                <div class="ri-text">同一<b>工号</b>名下多个出单手机号,按支付时间累计。</div>
+                <div class="ri-flow"><span class="ri-arrow">→</span> 累计跨过 2 万的那笔及之后出单 <span class="tag tag-peak">巅峰池</span></div>
+                <div class="ri-flow"><span class="ri-arrow">→</span> 未满 2 万 <span class="tag tag-adv">进阶池</span></div>
+              </div>
+            </div>
+            <div class="rule-item">
+              <span class="ri-num">3</span>
+              <div class="ri-body">
+                <div class="ri-title">同池抽奖与去重</div>
+                <div class="ri-text">中奖手机号关联订单归哪个池,该次抽奖就必须在哪个池;一个手机号多次抽奖,只保留提交最早的一次。</div>
+              </div>
+            </div>
+          </div>
+          <div class="rule-card">
+            <div class="rule-card-head"><span class="rule-ico">⇄</span>归属匹配</div>
+            <div class="match-start">
+              <div class="ms-title"><b>起点:查订单池</b></div>
+              <div class="ms-text">先用<b>加密手机号</b>查订单池,按命中账号数分流。</div>
+            </div>
+            <div class="match-connector"><span></span></div>
+            <div class="branch-grid">
+              <div>
+                <div class="branch-label">分支 A · 命中单个账号</div>
+                <div class="branch-box">
+                  命中单个账号,无需再比对姓名。
+                  <div class="bf"><span class="bf-text">→ 直接通过</span><span class="tag tag-pass">通过</span></div>
+                </div>
+              </div>
+              <div>
+                <div class="branch-label">分支 B · 命中多个账号(前 3 后 4 撞号)</div>
+                <div class="branch-box">
+                  用问卷填写的<b>销售姓名</b>与订单池 ccid / 销售姓名精确匹配。
+                  <div class="bf"><span class="bf-text">→ 唯一命中:归属该单并通过(备注记录 ccid)</span><span class="tag tag-pass">通过</span></div>
+                  <div class="bf"><span class="bf-text">→ 0 条或多条:转待审核,列出全部候选</span><span class="tag tag-pend">待审核</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="rules-time muted">时间范围:点上方按钮设置后仅统计范围内数据(问卷按提交时间、订单按支付时间过滤),不设置则不限。获奖名单标题自动用"活动周期名称"生成,无需单独填写标题。</p>
+      </div>
     </div>
 
     <h3 class="tpl-title">📞 异常名单沟通话术模板</h3>
@@ -271,6 +332,19 @@ document.querySelectorAll('.tab').forEach(function (t) {
     }
   });
 });
+
+// 规则面板默认折叠,点按钮展开/收起
+(function () {
+  var toggle = document.getElementById('rulesToggle');
+  var body = document.getElementById('rulesBody');
+  if (!toggle || !body) return;
+  toggle.addEventListener('click', function () {
+    var open = body.hidden;
+    body.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.innerHTML = (open ? '收起规则' : '展开规则') + ' <span class="chev">▾</span>';
+  });
+})();
 </script>
 </body>
 </html>
