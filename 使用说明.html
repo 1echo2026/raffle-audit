@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中奖名单审核工具 · 图文使用说明</title>
+<style>
+  :root{
+    --blue:#0b77b5;
+    --accent:#0369a1;
+    --blue-deep:#075985;
+    --sky-50:#f4fafe;
+    --sky-100:#e3f3fd;
+    --sky-200:#c7e7f9;
+    --card-border:#dce8f2;
+    --ink:#1f2d3d;
+    --ink-2:#334155;
+    --muted:#64748b;
+    --gold:#b45309;
+    --gold-bg:#fff7e8;
+    --green:#15803d;
+    --green-bg:#ecfdf3;
+    --red:#b91c1c;
+    --bg:#eef4f9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Hiragino Sans GB","Segoe UI",sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.75;
+    font-size:15px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:940px;margin:0 auto;padding:0 24px}
+
+  /* ============ 封面 ============ */
+  .hero{
+    background:linear-gradient(135deg,#0b77b5 0%,#0ea5e9 55%,#38bdf8 100%);
+    color:#fff;
+    padding:72px 0 64px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero::after{
+    content:"";position:absolute;right:-120px;top:-120px;width:380px;height:380px;
+    border-radius:50%;background:rgba(255,255,255,.08);
+  }
+  .hero::before{
+    content:"";position:absolute;left:-80px;bottom:-160px;width:320px;height:320px;
+    border-radius:50%;background:rgba(255,255,255,.07);
+  }
+  .hero .wrap{position:relative;z-index:1}
+  .hero .eyebrow{
+    display:inline-block;font-size:13px;letter-spacing:3px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);
+    padding:5px 16px;border-radius:999px;margin-bottom:22px;
+  }
+  .hero h1{font-size:38px;font-weight:700;letter-spacing:1px;margin-bottom:14px}
+  .hero p.lead{font-size:16px;color:#eaf6fd;max-width:640px;margin-bottom:30px}
+  .meta-chips{display:flex;flex-wrap:wrap;gap:12px}
+  .chip{
+    background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+    border-radius:10px;padding:10px 18px;font-size:14px;backdrop-filter:blur(4px);
+  }
+  .chip b{font-weight:600}
+  .chip .chip-k{display:block;font-size:12px;color:#cde9f8;margin-bottom:2px}
+
+  /* ============ 目录 ============ */
+  .toc-card{
+    background:#fff;border:1px solid var(--card-border);border-radius:16px;
+    box-shadow:0 10px 30px rgba(11,119,181,.08);
+    margin:-36px auto 0;position:relative;z-index:2;
+    padding:30px 36px;max-width:892px;
+  }
+  .toc-card h2{
+    font-size:18px;color:var(--accent);margin-bottom:18px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .toc-card h2::before{content:"";width:5px;height:20px;border-radius:3px;background:var(--blue)}
+  .toc{list-style:none;columns:2;column-gap:48px}
+  .toc li{break-inside:avoid;margin-bottom:9px}
+  .toc a{
+    color:var(--ink-2);text-decoration:none;font-size:14.5px;
+    display:flex;gap:10px;align-items:baseline;
+  }
+  .toc a:hover{color:var(--blue)}
+  .toc .n{
+    flex:none;width:24px;height:24px;border-radius:7px;background:var(--sky-100);
+    color:var(--accent);font-size:12.5px;font-weight:700;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
+  .toc .sub{padding-left:34px;font-size:13.5px;color:var(--muted);margin-bottom:7px}
+  .toc .sub a{color:var(--muted)}
+
+  /* ============ 正文 ============ */
+  main{padding:48px 0 20px}
+  section.chapter{margin-bottom:56px}
+  .ch-head{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+  .ch-num{
+    flex:none;width:46px;height:46px;border-radius:14px;
+    background:linear-gradient(135deg,var(--blue),#0ea5e9);
+    color:#fff;font-size:20px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 16px rgba(11,119,181,.28);
+  }
+  .ch-head h2{font-size:24px;color:var(--ink);font-weight:700}
+  .ch-head .ch-en{display:block;font-size:12px;color:var(--muted);font-weight:400;letter-spacing:2px;margin-top:2px}
+
+  h3.sec{
+    font-size:17.5px;color:var(--accent);margin:30px 0 12px;
+    padding-left:12px;border-left:4px solid var(--blue);line-height:1.4;
+  }
+  p{margin:10px 0;color:var(--ink-2)}
+  p.muted,span.muted{color:var(--muted)}
+  ul.dot,ol.step{margin:12px 0 12px 4px;padding-left:22px}
+  ul.dot li,ol.step li{margin:7px 0;color:var(--ink-2)}
+  ol.step{list-style:none;counter-reset:s;padding-left:0}
+  ol.step li{counter-increment:s;position:relative;padding-left:40px;margin:14px 0}
+  ol.step li::before{
+    content:counter(s);position:absolute;left:0;top:2px;
+    width:26px;height:26px;border-radius:50%;background:var(--sky-100);color:var(--accent);
+    font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;
+  }
+  b.strong{color:var(--accent)}
+
+  /* 按钮/界面文字 胶囊 */
+  .ui{
+    display:inline-block;background:var(--sky-100);color:var(--accent);
+    border:1px solid var(--sky-200);border-radius:6px;
+    padding:0 8px;font-size:13.5px;font-weight:600;line-height:1.7;
+    white-space:nowrap;font-family:inherit;
+  }
+  .ui.gold{background:var(--gold-bg);color:var(--gold);border-color:#f3d9a8}
+  .ui.green{background:var(--green-bg);color:var(--green);border-color:#bbe7c9}
+  .ui.red{background:#fef2f2;color:var(--red);border-color:#f6c9c9}
+  .ui.gray{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+  code.inline{
+    background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;
+    padding:1px 7px;font-size:13px;color:var(--blue-deep);
+    font-family:Consolas,"Courier New",monospace;
+  }
+
+  /* 截图 */
+  figure.shot{margin:18px 0 8px}
+  figure.shot img{
+    display:block;width:100%;border:1px solid var(--card-border);
+    border-radius:12px;box-shadow:0 8px 24px rgba(15,60,100,.10);
+    background:#fff;
+  }
+  figcaption{
+    text-align:center;font-size:13px;color:var(--muted);margin-top:9px;
+  }
+  figcaption b{color:var(--accent);font-weight:600}
+
+  /* 提示框 */
+  .callout{
+    border-radius:12px;padding:14px 18px;margin:16px 0;font-size:14px;
+    border:1px solid;display:flex;gap:12px;align-items:flex-start;
+  }
+  .callout .co-ico{flex:none;font-size:17px;line-height:1.6}
+  .callout.info{background:var(--sky-50);border-color:var(--sky-200)}
+  .callout.info .co-ico{color:var(--blue)}
+  .callout.warn{background:var(--gold-bg);border-color:#f3d9a8}
+  .callout.warn .co-ico{color:var(--gold)}
+  .callout.ok{background:var(--green-bg);border-color:#bbe7c9}
+  .callout.ok .co-ico{color:var(--green)}
+  .callout p{margin:2px 0;font-size:14px}
+
+  /* 快速流程卡片 */
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+  .flow .f-card{
+    background:#fff;border:1px solid var(--card-border);border-radius:14px;
+    padding:20px 16px;text-align:center;position:relative;
+  }
+  .flow .f-num{
+    width:38px;height:38px;border-radius:50%;margin:0 auto 10px;
+    background:linear-gradient(135deg,var(--blue),#0ea5e9);color:#fff;
+    font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;
+  }
+  .flow .f-card h4{font-size:15px;color:var(--ink);margin-bottom:6px}
+  .flow .f-card p{font-size:12.5px;color:var(--muted);margin:0;line-height:1.6}
+  .flow .f-arrow{
+    position:absolute;right:-13px;top:50%;transform:translateY(-50%);
+    color:#9cc8e4;font-size:18px;z-index:1;
+  }
+
+  /* 统计卡说明小网格 */
+  .mini-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 22px;margin:14px 0}
+  .mini-grid .mg{
+    border:1px solid var(--card-border);border-radius:10px;padding:10px 14px;
+    background:#fff;font-size:13.5px;
+  }
+  .mini-grid .mg b{color:var(--accent)}
+
+  /* 规则小卡 */
+  .rule-lite{
+    background:var(--sky-50);border:1px solid var(--sky-200);border-radius:12px;
+    padding:16px 20px;margin:14px 0;
+  }
+  .rule-lite h4{color:var(--accent);font-size:15px;margin-bottom:8px}
+  .rule-lite ol{padding-left:22px}
+  .rule-lite li{margin:6px 0;font-size:14px;color:var(--ink-2)}
+  .tag{
+    display:inline-block;font-size:12px;border-radius:5px;padding:0 8px;
+    font-weight:600;margin:0 2px;vertical-align:1px;
+  }
+  .tag.peak{background:#fff1e6;color:#c2410c;border:1px solid #fed7aa}
+  .tag.adv{background:var(--sky-100);color:var(--accent);border:1px solid var(--sky-200)}
+  .tag.pass{background:var(--green-bg);color:var(--green);border:1px solid #bbe7c9}
+  .tag.pend{background:#fef9c3;color:#a16207;border:1px solid #fde68a}
+
+  /* FAQ */
+  .faq-item{
+    border:1px solid var(--card-border);border-radius:12px;background:#fff;
+    padding:16px 20px;margin:12px 0;
+  }
+  .faq-item .q{font-weight:700;color:var(--ink);font-size:15px;margin-bottom:5px}
+  .faq-item .q::before{content:"Q";display:inline-flex;width:22px;height:22px;border-radius:6px;
+    background:var(--blue);color:#fff;font-size:12.5px;align-items:center;justify-content:center;margin-right:9px}
+  .faq-item .a{color:var(--ink-2);font-size:14px;padding-left:31px}
+  .faq-item .a::before{content:"A";display:inline-flex;width:22px;height:22px;border-radius:6px;
+    background:var(--sky-100);color:var(--accent);font-size:12.5px;font-weight:700;align-items:center;justify-content:center;margin-right:9px}
+
+  footer.doc-foot{
+    border-top:1px solid var(--card-border);margin-top:40px;
+    padding:28px 0 48px;text-align:center;color:var(--muted);font-size:13px;
+  }
+  footer.doc-foot .privacy{
+    display:inline-block;background:#fff;border:1px solid var(--card-border);
+    border-radius:999px;padding:8px 22px;margin-bottom:10px;font-size:13.5px;color:var(--accent);
+  }
+
+  @media (max-width:760px){
+    .toc{columns:1}
+    .flow{grid-template-columns:repeat(2,1fr)}
+    .flow .f-arrow{display:none}
+    .hero h1{font-size:28px}
+    .mini-grid{grid-template-columns:1fr}
+  }
+  @media print{
+    body{background:#fff;font-size:12px}
+    .hero{padding:36px 0}
+    .toc-card{box-shadow:none;break-inside:avoid}
+    figure.shot{break-inside:avoid}
+    section.chapter{break-inside:auto}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= 封面 ================= -->
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">图 文 操 作 手 册</span>
+    <h1>中奖名单审核工具 · 使用说明</h1>
+    <p class="lead">上传 4 个 Excel，自动完成有效订单过滤、加密手机号归属匹配、按工号累计逐单判定进阶 / 巅峰奖池，并一键导出本期审核结果。本手册按实际操作顺序编写，所有按钮区域均配界面截图。</p>
+    <div class="meta-chips">
+      <div class="chip"><span class="chip-k">在线地址</span><b>https://1echo2026.github.io/raffle-audit/</b></div>
+      <div class="chip"><span class="chip-k">适用对象</span><b>活动运营 / 名单审核人员</b></div>
+      <div class="chip"><span class="chip-k">数据安全</span><b>全程浏览器本地计算，不上传服务器</b></div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= 目录 ================= -->
+<div class="toc-card wrap" style="max-width:892px">
+  <h2>目录</h2>
+  <ol class="toc" style="list-style:none">
+    <li><a href="#c1"><span class="n">1</span>工具简介与数据安全</a></li>
+    <li><a href="#c2"><span class="n">2</span>三分钟快速上手</a></li>
+    <li><a href="#c3"><span class="n">3</span>第一步：上传 4 个 Excel</a></li>
+    <li><a href="#c4"><span class="n">4</span>第二步：确认规则参数与时间范围</a></li>
+    <li class="sub"><a href="#c4-1">4.1　参数四步配置</a></li>
+    <li class="sub"><a href="#c4-2">4.2　设置时间范围</a></li>
+    <li class="sub"><a href="#c4-3">4.3　判池规则与归属匹配说明</a></li>
+    <li><a href="#c5"><span class="n">5</span>审核前的工具按钮</a></li>
+    <li class="sub"><a href="#c5-1">5.1　编辑话术模板</a></li>
+    <li class="sub"><a href="#c5-2">5.2　生成绿色通道码</a></li>
+    <li class="sub"><a href="#c5-3">5.3　本地记录 / 列映射确认 / 开始审核</a></li>
+    <li><a href="#c6"><span class="n">6</span>列映射确认弹窗</a></li>
+    <li><a href="#c7"><span class="n">7</span>沿用上次审核记录</a></li>
+    <li><a href="#c8"><span class="n">8</span>审核结果总览与导出</a></li>
+    <li><a href="#c9"><span class="n">9</span>五个结果页签详解</a></li>
+    <li class="sub"><a href="#c9-1">9.1　获奖名单（图片格式预览）</a></li>
+    <li class="sub"><a href="#c9-2">9.2　中奖人员明细表</a></li>
+    <li class="sub"><a href="#c9-3">9.3　无效名单处理</a></li>
+    <li class="sub"><a href="#c9-4">9.4　异常名单沟通话术</a></li>
+    <li class="sub"><a href="#c9-5">9.5　历史记录</a></li>
+    <li><a href="#c10"><span class="n">10</span>话术模板管理页</a></li>
+    <li><a href="#c11"><span class="n">11</span>高经团队周进度核算</a></li>
+    <li><a href="#c12"><span class="n">12</span>常见问题</a></li>
+  </ol>
+</div>
+
+<main class="wrap">
+
+<!-- ================= 1 ================= -->
+<section class="chapter" id="c1">
+  <div class="ch-head"><span class="ch-num">1</span><h2>工具简介与数据安全<span class="ch-en">OVERVIEW & PRIVACY</span></h2></div>
+  <p>中奖名单审核工具是一个<b class="strong">纯网页工具</b>，用浏览器打开线上地址即可使用，无需安装任何软件。它完成三件事：</p>
+  <ul class="dot">
+    <li><b>判有效</b>：按订单金额、渠道前缀、支付时间自动过滤出有效订单，并区分强基、升学两个订单池；</li>
+    <li><b>判奖池</b>：按工号名下订单逐单累计，自动判定每位中奖者属于<span class="tag peak">巅峰池</span>还是<span class="tag adv">进阶池</span>；</li>
+    <li><b>判归属</b>：用问卷中的加密手机号查订单池，撞号时再按销售姓名二次匹配，无法唯一命中的自动转入待审核。</li>
+  </ul>
+  <div class="callout ok">
+    <span class="co-ico">🔒</span>
+    <p><b>数据安全：</b>所有 Excel 解析、匹配、统计均在<b>您自己的浏览器本地</b>完成（基于 SheetJS 本地解析），文件内容不会上传到任何服务器。审核记录、绿色通道码、话术模板也只保存在当前浏览器中。</p>
+  </div>
+  <p>全站共三个页面，均从审核主页进入：</p>
+  <ul class="dot">
+    <li><b>审核主页</b>（index.html）：上传文件、配置参数、审核、查看与导出结果；</li>
+    <li><b>话术模板管理页</b>（templates.html）：维护沟通话术；</li>
+    <li><b>高经团队周进度核算页</b>（team-progress.html）：从主页右上角按钮进入。</li>
+  </ul>
+</section>
+
+<!-- ================= 2 ================= -->
+<section class="chapter" id="c2">
+  <div class="ch-head"><span class="ch-num">2</span><h2>三分钟快速上手<span class="ch-en">QUICK START</span></h2></div>
+  <p>完整审核只需四步：</p>
+  <div class="flow">
+    <div class="f-card"><div class="f-num">1</div><h4>上传 4 个表</h4><p>强基订单池、升学订单池、进阶问卷、巅峰问卷，可一次性全选拖入</p><span class="f-arrow">→</span></div>
+    <div class="f-card"><div class="f-num">2</div><h4>确认参数</h4><p>周期名称、中奖期数、时间范围、金额门槛，默认值可直接用</p><span class="f-arrow">→</span></div>
+    <div class="f-card"><div class="f-num">3</div><h4>开始审核</h4><p>确认列映射后自动计算，撞号 / 异常记录自动分流待审核</p><span class="f-arrow">→</span></div>
+    <div class="f-card"><div class="f-num">4</div><h4>处理并导出</h4><p>处理无效名单，导出有效订单池与审核结果两个 Excel</p></div>
+  </div>
+  <div class="callout info">
+    <span class="co-ico">💡</span>
+    <p>第一次使用建议按本手册第 3～9 章顺序阅读；熟悉后可直接从第 12 章「常见问题」查阅具体操作。</p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section class="chapter" id="c3">
+  <div class="ch-head"><span class="ch-num">3</span><h2>第一步：上传 4 个 Excel<span class="ch-en">STEP 1 · UPLOAD</span></h2></div>
+  <p>打开在线地址后，页面最上方是上传区。点击虚线框选择文件，或把文件直接拖入均可；<b class="strong">4 个文件可以一次性全选后一起拖入</b>，系统会按内容自动识别类型，并在下方四个槽位中显示识别结果。</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/01_top_upload.png" alt="页面顶栏与第1步上传区域">
+    <figcaption><b>图 1</b>　页面顶栏与「第 1 步：上传文件」区域</figcaption>
+  </figure>
+
+  <p>需要准备的 4 个 .xlsx 文件：</p>
+  <ul class="dot">
+    <li><b>强基订单池</b>、<b>升学订单池</b>：订单导出表，用于有效单过滤与归属匹配；</li>
+    <li><b>进阶奖池问卷</b>、<b>巅峰奖池问卷</b>：取问卷中的<span class="ui">表单填写</span>表（需含 用户昵称 / 所中奖项 / 提交时间 / 基地 / 真实姓名 / 出单手机号 等列），<b>无需发放情况表</b>。</li>
+  </ul>
+  <div class="callout info">
+    <span class="co-ico">📌</span>
+    <p>右上角 <span class="ui gray">📊 高经团队周进度核算</span> 是独立的小工具入口（见第 11 章），与名单审核互不影响。</p>
+  </div>
+</section>
+
+<!-- ================= 4 ================= -->
+<section class="chapter" id="c4">
+  <div class="ch-head"><span class="ch-num">4</span><h2>第二步：确认规则参数与时间范围<span class="ch-en">STEP 2 · PARAMETERS</span></h2></div>
+
+  <h3 class="sec" id="c4-1">4.1　参数四步配置</h3>
+  <p>上传区下方是 <span class="ui gray">2</span> 号卡片「确认规则参数与本期时间范围」，按顶部步骤条从左到右分四步，四张卡片分别对应：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/02_params.png" alt="规则参数四步配置区域">
+    <figcaption><b>图 2</b>　参数区：步骤条与四张参数卡片</figcaption>
+  </figure>
+
+  <ol class="step">
+    <li><b>活动信息</b>：填写<span class="ui">活动周期名称</span>（如 <code class="inline">9.9-9.16</code>，用于生成获奖名单标题、替换话术中的 <code class="inline">{周期}</code>）与<span class="ui">中奖期数</span>（如 <code class="inline">82</code>，用于替换 <code class="inline">{期数}</code> 并写入导出文件名）。</li>
+    <li><b>时间范围</b>：设置订单支付时间、问卷提交时间的起止范围（设置方法见 4.2）。</li>
+    <li><b>有效判定</b>：<span class="ui">最低订单金额(元)</span>默认 <code class="inline">999</code>，低于此值的订单不算有效单；<span class="ui">有效渠道前缀</span>默认 <code class="inline">grow_xcg_zhuanjs_xiaoshou</code>，只统计该前缀开头的渠道号；<span class="ui">巅峰门槛累计金额(元)</span>默认 <code class="inline">20000</code>（2 万）。</li>
+    <li><b>排行审核</b>：勾选<span class="ui">审核单量排行</span>后，明细表按工号出单单数从多到少排序并显示单数列；不勾选则保持默认顺序。</li>
+  </ol>
+  <div class="callout ok">
+    <span class="co-ico">✅</span>
+    <p>所有参数都会<b>自动保存在本机浏览器</b>，刷新或下次打开页面自动恢复，无需重复填写。步骤条变蓝只表示当前正在聚焦该步，与是否已填写无关。</p>
+  </div>
+
+  <h3 class="sec" id="c4-2">4.2　设置时间范围</h3>
+  <p>点击参数卡 2 中的 <span class="ui">⏱ 不限 ~ 不限</span> 按钮，分别弹出订单支付时间、问卷提交时间的设置窗口：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/04_timemodal.png" alt="时间范围设置弹窗">
+    <figcaption><b>图 3</b>　时间范围弹窗：开始 / 结束时间（留空表示不限制）</figcaption>
+  </figure>
+
+  <ul class="dot">
+    <li>选择开始、结束时间后点 <span class="ui">确定</span> 生效；按钮文字会变成已选范围；</li>
+    <li><b>订单按支付时间过滤、问卷按提交时间过滤</b>，范围之外的数据不参与统计；</li>
+    <li>任一端留空即该端不限；点 <span class="ui gray">清除</span> 可恢复为全部不限。</li>
+  </ul>
+
+  <h3 class="sec" id="c4-3">4.3　判池规则与归属匹配说明</h3>
+  <p>点击参数区下方的 <span class="ui">展开规则 ▾</span> 按钮，可以查看本期完整的判池与归属规则（再点一次 <span class="ui gray">收起规则</span> 折叠）：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/03_rules.png" alt="判池规则与归属匹配展开面板">
+    <figcaption><b>图 4</b>　「判池规则与归属匹配」展开面板</figcaption>
+  </figure>
+
+  <div class="rule-lite">
+    <h4>判池规则（系统自动执行）</h4>
+    <ol>
+      <li><b>单笔直入巅峰</b>：单笔订单金额 ≥ 2 万，该单直接计入<span class="tag peak">巅峰池</span>；</li>
+      <li><b>工号累计判定</b>：同一<b>工号</b>名下即使有多个出单手机号，也按支付时间逐笔累计——累计跨过 2 万的那一笔及之后出单计入<span class="tag peak">巅峰池</span>，未满 2 万的计入<span class="tag adv">进阶池</span>；</li>
+      <li><b>同池抽奖与去重</b>：中奖手机号关联的订单归哪个池，该次抽奖就必须在哪个池；同一手机号多次抽奖，<b>只保留提交时间最早的一次</b>。</li>
+    </ol>
+  </div>
+  <div class="rule-lite">
+    <h4>归属匹配（系统自动执行）</h4>
+    <ol>
+      <li><b>起点：查订单池</b>。先用问卷中的<b>加密手机号</b>查订单池；</li>
+      <li><b>分支 A · 命中单个账号</b>：无需再比对姓名，<span class="tag pass">直接通过</span>；</li>
+      <li><b>分支 B · 命中多个账号</b>（前 3 后 4 掩码撞号）：用问卷填写的<b>销售姓名</b>与订单池 ccid / 销售姓名精确匹配——唯一命中则归属该单并<span class="tag pass">通过</span>（备注记录 ccid）；命中 0 条或多条，则<span class="tag pend">转待审核</span>并列出全部候选人。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section class="chapter" id="c5">
+  <div class="ch-head"><span class="ch-num">5</span><h2>审核前的工具按钮<span class="ch-en">TOOLBAR</span></h2></div>
+  <p>参数区下方的蓝色工具栏共有 5 个按钮，鼠标悬停在 <span class="ui">生成绿色通道码</span> 上还会出现规则提示气泡：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/05_green_tip.png" alt="话术工具栏五个按钮与绿码悬停提示">
+    <figcaption><b>图 5</b>　审核工具按钮栏（悬停「生成绿色通道码」显示规则说明）</figcaption>
+  </figure>
+
+  <h3 class="sec" id="c5-1">5.1　编辑话术模板</h3>
+  <p>点击 <span class="ui">编辑话术模板</span>（按钮下方有「独立页面」小字）会在新的独立页面管理全部话术模板，详见<b>第 10 章</b>。模板修改后自动保存在本机，审核主页直接读取。</p>
+
+  <h3 class="sec" id="c5-2">5.2　生成绿色通道码</h3>
+  <p>用于处理<b>临时放行</b>场景。点击 <span class="ui">生成绿色通道码</span> 即刻生成一个形如 <code class="inline">GREEN-8K3D-92</code> 的一次性码（按钮上的绿点表示当前已有生成的码）。</p>
+  <ul class="dot">
+    <li>把绿码告知抽奖人，让其填写在问卷的<span class="ui">出单用户手机号/ID</span>栏，系统识别到绿码后<b>自动放行并入名单</b>；</li>
+    <li>已生成的绿码以浮层形式列在按钮下方，每条可单独<span class="ui gray">复制</span> / <span class="ui red">删除</span>，也可<span class="ui gray">清空全部</span>；</li>
+    <li>绿码只保存在当前浏览器中。</li>
+  </ul>
+
+  <figure class="shot">
+    <img src="使用说明-img/06_green_codes.png" alt="已生成的绿色通道码浮层">
+    <figcaption><b>图 6</b>　已生成的绿色通道码列表（复制 / 删除 / 清空全部）</figcaption>
+  </figure>
+
+  <h3 class="sec" id="c5-3">5.3　本地记录 / 列映射确认 / 开始审核</h3>
+  <ul class="dot">
+    <li><span class="ui">本地记录</span>：快速打开结果区的「历史记录」页签（需已有一次审核结果），存档的加载、命名等操作见 <b>9.5</b>；</li>
+    <li><span class="ui">列映射确认</span>：手动打开列映射弹窗，检查 / 修改每个字段对应 Excel 的哪一列（详见第 6 章）；</li>
+    <li><span class="ui">▶ 开始审核</span>：蓝色主按钮，确认参数无误后点击即开始计算。<b>每次点击也会自动把当前结果存档一条。</b></li>
+  </ul>
+</section>
+
+<!-- ================= 6 ================= -->
+<section class="chapter" id="c6">
+  <div class="ch-head"><span class="ch-num">6</span><h2>列映射确认弹窗<span class="ch-en">COLUMN MAPPING</span></h2></div>
+  <p>4 个文件识别完成后（或点击 <span class="ui gray">列映射确认</span> 时），系统会弹出列映射确认窗口，展示每个需要的字段<b>自动识别</b>到了 Excel 的哪一列：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/15_colmap_modal.png" alt="列映射确认弹窗">
+    <figcaption><b>图 7</b>　列映射确认：字段 / 匹配到的列 / 状态</figcaption>
+  </figure>
+
+  <ul class="dot">
+    <li>自动识别正确时直接点 <span class="ui">✓ 确认并开始审核</span> 即可；</li>
+    <li>若某列识别错误或提示<b class="strong">必填</b>未匹配，可在「匹配到的列」下拉中<b>手动指定</b>正确列；</li>
+    <li>手动指定的对应关系会被记住，下次上传同类表自动复用；点 <span class="ui gray">↺ 恢复自动识别</span> 可清除手动指定。</li>
+  </ul>
+</section>
+
+<!-- ================= 7 ================= -->
+<section class="chapter" id="c7">
+  <div class="ch-head"><span class="ch-num">7</span><h2>沿用上次审核记录<span class="ch-en">CONTINUE LAST RUN</span></h2></div>
+  <p>如果本次上传的与上次是<b>同一组文件</b>，审核开始前会弹出确认窗口，显示上次的时间周期与统计结果：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/07_continue.png" alt="沿用上次记录弹窗">
+    <figcaption><b>图 8</b>　「检测到与上次相同的文件」确认弹窗</figcaption>
+  </figure>
+
+  <ul class="dot">
+    <li>点 <span class="ui">是，在上次基础上继续</span>：保留上次的全部人工处理结果（✅ 通过 / ❌ fail 退回 / 🕓 待审核 / 话术表修改）。上次已人工处理过的记录会用<b>淡紫色</b>标出，本次新增记录保持原色，方便区分；</li>
+    <li>点 <span class="ui gray">否，全部重新审核</span>：忽略历史处理，全部按原始数据重新判定。</li>
+  </ul>
+</section>
+
+<!-- ================= 8 ================= -->
+<section class="chapter" id="c8">
+  <div class="ch-head"><span class="ch-num">8</span><h2>审核结果总览与导出<span class="ch-en">RESULTS & EXPORT</span></h2></div>
+  <p>审核完成后，页面展开 <span class="ui gray">3</span> 号区域「审核结果与导出」：顶部是统计卡片，向下依次是导出按钮、5 个结果页签。</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/08_result_image.png" alt="审核结果统计卡、导出按钮与获奖名单图片预览">
+    <figcaption><b>图 9</b>　结果区：统计卡片、导出按钮与「获奖名单（图片格式预览）」</figcaption>
+  </figure>
+
+  <div class="mini-grid">
+    <div class="mg"><b>进阶有效 / 巅峰有效</b>：两个奖池最终入名单的人数</div>
+    <div class="mg"><b>无效</b>：未通过自动校验、需人工处理的记录数</div>
+    <div class="mg"><b>重复</b>：同手机号多次抽奖被剔除的条数</div>
+    <div class="mg"><b>强基 / 升学</b>：两个订单池中命中的有效订单数</div>
+  </div>
+  <p class="muted" style="font-size:13.5px">（点击统计数字卡片还可查看对应明细弹窗。）</p>
+
+  <h3 class="sec">导出文件</h3>
+  <p>点击橙色的 <span class="ui gold">⬇ 导出(选择导出内容)</span>，在弹窗中勾选需要的文件：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/14_export_modal.png" alt="导出内容选择弹窗">
+    <figcaption><b>图 10</b>　导出弹窗：两个可选文件</figcaption>
+  </figure>
+
+  <ul class="dot">
+    <li><b>第 N 期有效订单池.xlsx</b>：含<b>强基、升学两个子表</b>；</li>
+    <li><b>第 N 期中奖名单审核结果.xlsx</b>：含 5 个子表——<span class="ui gray">获奖名单图片格式</span>、<span class="ui gray">中奖明细（奖品底表）</span>、<span class="ui gray">宠粉数据总结</span>、<span class="ui gray">异常名单沟通话术</span>、<span class="ui gray">单量审核名单</span>；</li>
+    <li>文件名中的「N」自动取参数中填写的中奖期数。可用 <span class="ui gray">全选</span> / <span class="ui gray">清空</span> 快速勾选，最后点 <span class="ui">导出所选</span>，文件通过浏览器下载到本地。</li>
+  </ul>
+</section>
+
+<!-- ================= 9 ================= -->
+<section class="chapter" id="c9">
+  <div class="ch-head"><span class="ch-num">9</span><h2>五个结果页签详解<span class="ch-en">RESULT TABS</span></h2></div>
+
+  <h3 class="sec" id="c9-1">9.1　🏆 获奖名单（图片格式预览）</h3>
+  <p>默认页签，按奖池展示最终的巅峰、进阶两张获奖名单表格（见图 9），名单标题自动使用「活动周期名称」生成。确认无误后通过第 8 章的导出按钮即可拿到与页面一致的名单文件。</p>
+
+  <h3 class="sec" id="c9-2">9.2　📋 中奖人员明细表</h3>
+  <figure class="shot">
+    <img src="使用说明-img/09_tab_detail.png" alt="中奖人员明细表页签">
+    <figcaption><b>图 11</b>　中奖人员明细表（可搜索、可改单元格、可剔除）</figcaption>
+  </figure>
+  <ul class="dot">
+    <li>顶部搜索框可按 姓名 / 手机号 / 工号 / 奖品 / 金额 等快速查找；</li>
+    <li>直接点击 <b>基地 / 姓名 / 工号 / 出单手机号 / 奖品</b> 单元格即可修改，改后导出同步；</li>
+    <li>每行操作列的 <span class="ui red">✕ fail</span> 可把该记录<b>退回无效名单</b>；</li>
+    <li>拖动表头右边缘可调整列宽，<b>双击表头边缘恢复默认宽度</b>。</li>
+  </ul>
+
+  <h3 class="sec" id="c9-3">9.3　❌ 无效名单处理</h3>
+  <p>所有未通过自动校验的记录集中在此，每行用红字标明无效原因，下方还包含「重复剔除」记录：</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/10_tab_invalid.png" alt="无效名单页签全貌">
+    <figcaption><b>图 12</b>　无效名单：搜索框、图例说明与无效原因</figcaption>
+  </figure>
+
+  <p>操作列提供三个人工处理按钮：</p>
+  <figure class="shot">
+    <img src="使用说明-img/10b_invalid_ops.png" alt="无效名单操作列三个按钮特写">
+    <figcaption><b>图 13</b>　操作列：✅ 通过 / 🕓 待审核 / ✏️ 修改</figcaption>
+  </figure>
+  <ul class="dot">
+    <li><span class="ui green">✅ 通过</span>：人工确认无误，该记录<b>直接转入中奖人员明细表</b>；</li>
+    <li><span class="ui" style="background:#fef9c3;color:#a16207;border-color:#fde68a">🕓 待审核</span>：先标记挂起，标记后按钮变为「🕓 已待审核」，下方出现「点击取消」小字，<b>再点一次即可取消</b>待审核状态；</li>
+    <li><span class="ui">✏️ 修改</span>：打开修改窗口（见图 15），更正信息后重新参与匹配。</li>
+  </ul>
+
+  <figure class="shot">
+    <img src="使用说明-img/10c_invalid_pending.png" alt="待审核标记后的按钮状态">
+    <figcaption><b>图 14</b>　标记待审核后：按钮显示「已待审核 · 点击取消」</figcaption>
+  </figure>
+
+  <p>点击 <span class="ui">✏️ 修改</span> 弹出「修改信息并重新匹配」窗口，顶部显示当前人员信息，可更正真实姓名、出单手机号、基地三项：</p>
+  <figure class="shot">
+    <img src="使用说明-img/11_edit_modal.png" alt="修改信息并重新匹配弹窗">
+    <figcaption><b>图 15</b>　修改弹窗：更正后点「保存并重新匹配」</figcaption>
+  </figure>
+  <ul class="dot">
+    <li>出单手机号请填写 <b>11 位手机号</b>，保存后系统用新信息重新匹配订单池；</li>
+    <li>此外，直接点击表格中的<b>「无效原因」单元格</b>也可以就地改写原因文字。</li>
+  </ul>
+
+  <h3 class="sec" id="c9-4">9.4　📞 异常名单沟通话术</h3>
+  <p>系统为每条异常记录按模板自动生成沟通话术，个人信息已自动填入，可直接复制发给对方：</p>
+  <figure class="shot">
+    <img src="使用说明-img/12_tab_comm.png" alt="异常名单沟通话术页签">
+    <figcaption><b>图 16</b>　沟通话术：三个筛选条件与自动生成的话术内容</figcaption>
+  </figure>
+  <ul class="dot">
+    <li>可用 <span class="ui gray">奖池</span>、<span class="ui gray">基地</span>、<span class="ui gray">异常类型</span> 三个下拉组合筛选，<span class="ui gray">重置筛选</span> 一键恢复；</li>
+    <li>点击 基地 / 姓名 / 工号 / 手机号 / 异常原因 / 处理话术 / 报备审核 等任意单元格可直接修改，<b>修改后导出内容同步更新</b>；</li>
+    <li>话术模板在第 10 章的独立页面统一维护。</li>
+  </ul>
+
+  <h3 class="sec" id="c9-5">9.5　🕘 历史记录</h3>
+  <figure class="shot">
+    <img src="使用说明-img/13_tab_history.png" alt="历史记录页签">
+    <figcaption><b>图 17</b>　历史记录：保存、加载、命名、删除</figcaption>
+  </figure>
+  <ul class="dot">
+    <li>每次点 <span class="ui">▶ 开始审核</span> 都会<b>自动存档一条</b>；也可随时点 <span class="ui">💾 保存当前审核结果</span> 手动存当前状态；</li>
+    <li>每条存档可 <span class="ui gray">加载</span> 恢复查看，或 <span class="ui red">删除</span>；<b>在存档条目上点击鼠标右键</b>可进行命名、置顶、标注，方便区分多期结果；</li>
+    <li><span class="ui red">清空全部</span> 会删除所有存档（操作有确认提示）；</li>
+    <li>存档只保存在<b>本机浏览器</b>中，不清除浏览器站点数据就会一直保留。</li>
+  </ul>
+</section>
+
+<!-- ================= 10 ================= -->
+<section class="chapter" id="c10">
+  <div class="ch-head"><span class="ch-num">10</span><h2>话术模板管理页<span class="ch-en">TEMPLATES</span></h2></div>
+  <p>从审核主页工具栏点 <span class="ui">编辑话术模板</span> 进入。每个模板占一张卡片：上方是模板名称（<b>名称 +（括号内补充说明）</b>会自动显示为两行，括号内为小字），下方是话术正文，右下角可 <span class="ui red">✕</span> 删除该模板。</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/17_templates.png" alt="话术模板管理页面">
+    <figcaption><b>图 18</b>　话术模板管理：名称两行显示、正文编辑、删除</figcaption>
+  </figure>
+
+  <ul class="dot">
+    <li>正文修改后<b>自动保存</b>到本机浏览器，回到审核主页即生效；</li>
+    <li>点 <span class="ui gray">＋ 新增模板</span> 可自建一条；<span class="ui gray">↺ 恢复默认模板</span> 可还原为系统默认；</li>
+    <li>话术中可使用占位符，生成时自动替换为本人信息：<br>
+      <code class="inline">{姓名}</code> <code class="inline">{手机号}</code> <code class="inline">{奖池}</code> <code class="inline">{应属奖池}</code> <code class="inline">{奖品}</code> <code class="inline">{原因}</code> <code class="inline">{备注}</code> <code class="inline">{期数}</code> <code class="inline">{周期}</code> <code class="inline">{出单时间}</code> <code class="inline">{单数}</code> <code class="inline">{提交时间}</code>
+    </li>
+    <li>完成后点页面底部 <span class="ui">← 返回审核主页</span> 回到审核流程。</li>
+  </ul>
+</section>
+
+<!-- ================= 11 ================= -->
+<section class="chapter" id="c11">
+  <div class="ch-head"><span class="ch-num">11</span><h2>高经团队周进度核算<span class="ch-en">TEAM PROGRESS</span></h2></div>
+  <p>从审核主页右上角 <span class="ui gray">📊 高经团队周进度核算</span> 进入，用于按高经团队汇总本期转化金额、折算周目标并排名。同样全程本地计算。</p>
+
+  <figure class="shot">
+    <img src="使用说明-img/16_team_progress.png" alt="高经团队周进度核算页面默认态">
+    <figcaption><b>图 19</b>　高经团队周进度核算：两个上传区</figcaption>
+  </figure>
+
+  <ol class="step">
+    <li><b>上传两张表</b>：①「高经团队月目标表」（需含 高经团队/高经 与 月目标/销售直推目标 两列）；②「有数看板」GMV 表（需含 高经/高经团队 与 转化金额/销售直推业绩 两列）。月目标表上传后可点 <span class="ui">💾 保存月目标</span> 固定在本机，以后打开自动带出；要换新月份目标表时先点 <span class="ui gray">清除已保存</span>（需两次确认）。</li>
+    <li><b>填写核算参数</b>：本期名称（如 <code class="inline">10.9-10.16</code>，用于标题和导出文件名）。页面给出折算口径：<b>周目标 = 月目标 ÷ 当月天数 × 本期天数</b>，天数可按实际修改；<b>目标完成度 = 本期转化金额 ÷ 月目标 × 100%</b>。确认后点 <span class="ui">▶ 开始核算</span>。</li>
+    <li><b>查看与导出</b>：结果按目标完成度从高到低排名，第一名整行高亮并显示 🏆；未设月目标的团队排最后并标注「未设目标」。可搜索团队 / 基地，点 <span class="ui gold">⬇ 导出核算结果 Excel</span> 下载。</li>
+  </ol>
+  <div class="callout info">
+    <span class="co-ico">📌</span>
+    <p>同名团队在月目标表中出现多行时，月目标自动累加。页面左上角 <span class="ui gray">← 返回审核主页</span> 可随时切回名单审核。</p>
+  </div>
+</section>
+
+<!-- ================= 12 ================= -->
+<section class="chapter" id="c12">
+  <div class="ch-head"><span class="ch-num">12</span><h2>常见问题<span class="ch-en">FAQ</span></h2></div>
+
+  <div class="faq-item">
+    <div class="q">上传的 Excel 会被传到网上吗？</div>
+    <div class="a">不会。所有解析和计算都在您本机浏览器中完成，服务器只负责提供网页本身，任何文件内容都不会离开您的电脑。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">刷新页面后，之前填的参数和改的话术还在吗？</div>
+    <div class="a">在。规则参数、话术模板、绿色通道码、列映射指定、月目标和历史存档都保存在当前浏览器中；但<b>换浏览器、换电脑或清除站点数据后会丢失</b>，重要结果请及时用导出按钮下载 Excel。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">问卷文件要放哪个工作表？</div>
+    <div class="a">系统自动取问卷中的「表单填写」表，包含 用户昵称、所中奖项、提交时间、基地、真实姓名、出单手机号即可，不需要发放情况表。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">提示加密手机号撞号、归属不确定怎么办？</div>
+    <div class="a">系统已自动用销售姓名与订单池 ccid / 销售姓名二次匹配；仍无法唯一命中的记录会进入无效名单并列出全部候选，人工核对后用 ✅ 通过 / 🕓 待审核 / ✏️ 修改 处理即可。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">同一个人抽了多次奖怎么算？</div>
+    <div class="a">同一手机号多次抽奖只保留提交时间最早的一次，其余出现在无效名单的「重复剔除」区域；如确认需要保留，同样可点 ✅ 通过 转回名单。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">明细表里把人误剔除了，能撤回吗？</div>
+    <div class="a">可以。被 ✕ fail 退回的记录就在「无效名单」页签中，找到后点 ✅ 通过 即可转中奖人员明细表。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">绿色通道码如何使用？</div>
+    <div class="a">点「生成绿色通道码」后把码发给抽奖人，让其填在问卷「出单用户手机号/ID」栏，系统识别后自动放行并入名单；用完可在绿码浮层中删除或清空。</div>
+  </div>
+  <div class="faq-item">
+    <div class="q">导出的两个文件分别是什么？</div>
+    <div class="a">「第 N 期有效订单池.xlsx」含强基、升学两个子表；「第 N 期中奖名单审核结果.xlsx」含获奖名单图片格式、中奖明细（奖品底表）、宠粉数据总结、异常名单沟通话术、单量审核名单共 5 个子表。期数 N 取自参数中填写的中奖期数。</div>
+  </div>
+</section>
+
+<footer class="doc-foot">
+  <div class="privacy">🔒 纯静态页面 · 浏览器本地解析 Excel · 数据不上传服务器</div>
+  <p>中奖名单审核工具 · 图文使用说明　|　在线地址：https://1echo2026.github.io/raffle-audit/</p>
+</footer>
+
+</main>
+</body>
+</html>
