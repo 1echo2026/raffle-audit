@@ -6,8 +6,23 @@
 <title>话术模板管理 · 中奖名单审核工具</title>
 <link rel="stylesheet" href="assets/style.css">
 <style>
-  .tpl-row .tpl-name { width: 150px; box-sizing: border-box; }
   .tpl-row textarea { min-height: 80px; }
+  /* 模板名称框:主名称一行,括号内说明换行小字 */
+  .tpl-row .tpl-name {
+    width: 150px; box-sizing: border-box; padding: 7px 10px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .tpl-name .tn-main, .tpl-name .tn-sub {
+    width: 100%; border: 0; background: transparent; outline: none;
+    padding: 0; font-family: inherit; text-align: left;
+  }
+  .tpl-name .tn-main { font-weight: bold; font-size: 13px; color: #17324a; }
+  .tpl-name .tn-sub { font-size: 11.5px; font-weight: normal; color: #64748b; }
+  .tpl-name .tn-sub::placeholder { color: #a7b6c4; }
+  .tpl-row .tpl-name:not(.two) .tn-sub { display: none; }
+  .tpl-row .tpl-name:focus-within {
+    border-color: var(--blue); box-shadow: 0 0 0 3px rgba(11,119,181,.13);
+  }
 </style>
 </head>
 <body>
@@ -47,19 +62,42 @@
       return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
     });
   }
+  function splitName(v) {
+    var m = /^([^（(]+)[（(](.*?)[)）]\s*$/.exec(v || '');
+    return m ? {main: m[1], sub: m[2]} : {main: v || '', sub: ''};
+  }
+  function joinName(main, sub) {
+    main = (main || '').trim(); sub = (sub || '').trim();
+    return main + (sub ? '（' + sub + '）' : '');
+  }
   function render() {
     list.innerHTML = '';
     templates.forEach(function (t, i) {
       var row = document.createElement('div');
       row.className = 'tpl-row';
+      var nm = splitName(t.type);
+      var hasSub = !!nm.sub;
       row.innerHTML =
-        '<input class="tpl-name" value="' + esc(t.type) + '">' +
-        '<textarea rows="3"></textarea>' +
-        '<button class="tpl-del" title="删除该模板">✕</button>';
-      var nameInput = row.querySelector('.tpl-name');
+        '<label class="tpl-name' + (hasSub ? ' two' : '') + '">'
+        + '<input class="tn-main" value="' + esc(nm.main) + '" placeholder="模板名称">'
+        + '<input class="tn-sub" value="' + esc(nm.sub) + '" placeholder="补充说明(选填)">'
+        + '</label>'
+        + '<textarea rows="3"></textarea>'
+        + '<button class="tpl-del" title="删除该模板">✕</button>';
+      var mainInput = row.querySelector('.tn-main');
+      var subInput = row.querySelector('.tn-sub');
       var ta = row.querySelector('textarea');
       ta.value = t.script || '';
-      nameInput.onchange = function () { t.type = nameInput.value; persist(); };
+      function syncName() {
+        // 主名称里直接写「名称（说明）」也能自动拆开
+        var p = splitName(mainInput.value);
+        var subVal = subInput ? subInput.value : p.sub;
+        t.type = joinName(p.main, subVal || p.sub);
+        persist();
+        if ((!!(subVal || p.sub)) !== hasSub) render();
+      }
+      mainInput.onchange = syncName;
+      subInput.onchange = syncName;
       ta.oninput = function () { t.script = ta.value; persist(); };
       row.querySelector('.tpl-del').onclick = function () { templates.splice(i, 1); persist(); render(); };
       list.appendChild(row);
