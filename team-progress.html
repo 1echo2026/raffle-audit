@@ -7,21 +7,22 @@
 <link rel="stylesheet" href="assets/style.css">
 <style>
   .up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .up-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: #fafafa; }
+  .up-box { border: 1px solid var(--card-border); border-radius: 10px; padding: 12px; background: #f8fbfd; }
   .up-box h4 { margin: 0 0 8px; font-size: 13.5px; }
   .up-box .dz-sm {
-    border: 2px dashed #b7c4f5; border-radius: 8px; background: #f8faff;
+    border: 2px dashed var(--sky-200); border-radius: 8px; background: var(--sky-50);
     padding: 14px; text-align: center; cursor: pointer; font-size: 13px; line-height: 1.8;
   }
-  .up-box .dz-sm:hover, .up-box .dz-sm.drag { border-color: var(--blue); background: #eef3ff; }
+  .up-box .dz-sm:hover, .up-box .dz-sm.drag { border-color: var(--blue); background: var(--sky-tint); }
   .up-box .files { margin-top: 8px; font-size: 12.5px; }
   .up-box .detected {
-    margin-top: 8px; font-size: 12px; color: #595959; background: #fff;
+    margin-top: 8px; font-size: 12px; color: #4a5a6a; background: #fff;
     border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; line-height: 1.7;
   }
-  .formula { background: #f8faff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 10px 0 12px; line-height: 1.9; }
-  .formula b { color: var(--blue); }
-  .formula input { width: 68px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; text-align: center; }
+  .formula { background: var(--sky-50); border: 1px solid var(--sky-200); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 10px 0 12px; line-height: 1.9; color: var(--ink); }
+  .formula b { color: var(--accent); }
+  .formula input { width: 68px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; text-align: center; background: #fff; color: var(--ink); }
+  .formula input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(11,119,181,.13); }
   /* 月目标保存 */
   .goal-save {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -34,14 +35,14 @@
   .btn.danger-armed { background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322; }
   .dz-sm.locked { border-color: #e0e0e0; background: #f5f5f5; color: #8c8c8c; cursor: not-allowed; }
   .dz-sm.locked:hover { border-color: #e0e0e0; background: #f5f5f5; }
-  #teamTableWrap { max-height: 640px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  #teamTableWrap { max-height: 640px; overflow: auto; border: 1px solid var(--card-border); border-radius: 8px; }
   #teamTable td.team { text-align: left; }
-  .bar-wrap { background: #f0f0f0; border-radius: 8px; height: 10px; overflow: hidden; min-width: 90px; }
-  .bar-fill { height: 100%; background: linear-gradient(90deg, #52c41a, #2f54eb); }
+  .bar-wrap { background: #e8f1f7; border-radius: 8px; height: 10px; overflow: hidden; min-width: 90px; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, #52c41a, var(--blue)); }
   .bar-fill.warn { background: #fa8c16; }
   .bar-fill.nogoal { background: #d9d9d9; }
   .rate-hi { color: var(--green); font-weight: 700; }
-  .rate-mid { color: var(--blue); font-weight: 700; }
+  .rate-mid { color: var(--accent); font-weight: 700; }
   .rate-low { color: #fa8c16; font-weight: 700; }
   .rate-none { color: #bfbfbf; }
   /* 第一名重点标出 */
