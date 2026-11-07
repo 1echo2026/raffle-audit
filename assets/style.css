@@ -292,6 +292,66 @@ mark { background: #ffe58f; padding: 0 1px; border-radius: 2px; }
   max-width: 380px; display: block; justify-content: flex-start;
 }
 .params .time-btn.set { border-color: var(--blue); color: var(--accent); background: var(--sky-50); }
+
+/* 第 2 步:四步参数卡 */
+.panel-sub { margin: -10px 0 18px; font-size: 12.5px; color: var(--muted-ink); }
+.stepbar {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--card-border); border-radius: 12px;
+  background: #fff; padding: 12px 18px; margin-bottom: 16px;
+}
+.sb-step { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.sb-num {
+  width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: bold;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #f1f5f9; color: #9aa8b6; border: 1px solid #e6edf4;
+}
+.sb-step.active .sb-num { background: var(--blue); color: #fff; border-color: var(--blue); }
+.sb-label { font-size: 13px; font-weight: bold; color: #17324a; }
+.sb-step:not(.active) .sb-label { font-weight: normal; color: #9aa8b6; }
+.sb-link { flex: 1 1 auto; height: 1px; background: var(--line); position: relative; min-width: 18px; }
+.sb-link::after {
+  content: ''; position: absolute; left: 50%; top: -2px; width: 5px; height: 5px;
+  border-radius: 50%; background: #dbe7f0; transform: translateX(-50%);
+}
+.param-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.param-card {
+  border: 1px solid var(--card-border); border-radius: 12px;
+  background: #fbfdff; padding: 14px 16px 16px; display: flex; flex-direction: column;
+}
+.pc-head { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); margin-bottom: 14px; }
+.pc-num {
+  flex: 0 0 22px; width: 22px; height: 22px; border-radius: 6px;
+  background: var(--sky-100); color: var(--accent); font-size: 12px; font-weight: bold;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pc-desc { font-size: 12px; line-height: 1.5; color: #4a5a6a; }
+.pc-field { display: flex; flex-direction: column; gap: 6px; }
+.pc-field + .pc-field { margin-top: 16px; }
+.pc-label { font-size: 12.5px; font-weight: bold; color: #17324a; }
+.pc-hint { margin: 0; font-size: 11.5px; line-height: 1.6; color: #8b9aab; }
+.pc-field input {
+  width: 100%; padding: 8px 10px; font-size: 13px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; transition: .15s;
+}
+.pc-field input::placeholder { color: #a7b4c2; }
+.pc-field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(11,119,181,.13); }
+.param-card .time-btn {
+  width: 100%; max-width: none; display: block; text-align: left;
+  padding: 8px 10px; font-size: 12.5px; font-weight: normal;
+}
+.param-card .time-btn.set { border-color: var(--blue); color: var(--accent); background: var(--sky-50); }
+.pc-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: bold; color: #17324a; }
+.pc-check input { width: 15px; height: 15px; accent-color: var(--blue); }
+.pc-status-label { margin: 16px 0 6px; font-size: 11.5px; color: #8b9aab; }
+.pc-status {
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--sky-200); background: var(--sky-50); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px; color: var(--accent);
+}
+.pc-status .dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.pc-status.off { border-color: var(--line); background: #f7fafc; color: var(--muted-ink); }
+.pc-status.off .dot { background: #b6c4d2; }
 .btn-min { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
 .grid td.ops { white-space: nowrap; }
 
@@ -425,4 +485,13 @@ body.resizing-cols, body.resizing-cols * {
 @media (max-width: 720px) {
   .slots { grid-template-columns: 1fr; }
   .winner-table { width: 100%; }
+}
+
+@media (max-width: 1100px) {
+  .param-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .param-grid { grid-template-columns: 1fr; }
+  .stepbar { flex-wrap: wrap; gap: 8px 10px; }
+  .sb-link { display: none; }
 }

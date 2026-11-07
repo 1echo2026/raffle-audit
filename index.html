@@ -32,31 +32,75 @@
   <!-- 第 2 步:参数 -->
   <section class="card-panel">
     <h2><span class="step">2</span> 确认规则参数与本期时间范围</h2>
-    <div class="params">
-      <label>活动周期名称(自动用于获奖名单标题与话术{周期})
-        <input id="period" type="text" value="9.9-9.16">
-      </label>
-      <label>中奖期数(用于话术{期数}与导出文件名,如 82)
-        <input id="qishu" type="text" value="82">
-      </label>
-      <label>问卷提交时间范围
-        <button type="button" class="btn plain time-btn" id="btnTimeForm">⏱ 不限 ~ 不限</button>
-      </label>
-      <label>订单支付时间范围
-        <button type="button" class="btn plain time-btn" id="btnTimeOrder">⏱ 不限 ~ 不限</button>
-      </label>
-      <label>有效渠道前缀
-        <input id="prefix" type="text" value="grow_xcg_zhuanjs_xiaoshou">
-      </label>
-      <label>最低订单金额(元)
-        <input id="minAmount" type="number" value="999">
-      </label>
-      <label>巅峰门槛累计金额(元)
-        <input id="threshold" type="number" value="20000">
-      </label>
-      <label>审核单量排行
-        <span class="chk-line"><input id="rankByCount" type="checkbox"> 明细表按工号出单单数从多到少排序(含单数列)</span>
-      </label>
+    <p class="panel-sub">分四步配置活动规则,按从左到右顺序填写</p>
+
+    <div class="stepbar">
+      <div class="sb-step active"><span class="sb-num">1</span><span class="sb-label">活动信息</span></div>
+      <span class="sb-link"></span>
+      <div class="sb-step"><span class="sb-num">2</span><span class="sb-label">时间范围</span></div>
+      <span class="sb-link"></span>
+      <div class="sb-step"><span class="sb-num">3</span><span class="sb-label">有效判定</span></div>
+      <span class="sb-link"></span>
+      <div class="sb-step"><span class="sb-num">4</span><span class="sb-label">排行审核</span></div>
+    </div>
+
+    <div class="param-grid">
+      <section class="param-card">
+        <div class="pc-head"><span class="pc-num">1</span><span class="pc-desc">填写本期周期与中奖期数</span></div>
+        <div class="pc-field">
+          <label class="pc-label" for="period">活动周期名称</label>
+          <input id="period" type="text" placeholder="如 9.9-9.16">
+          <p class="pc-hint">用于生成获奖名单标题,并替换话术里的 {周期}。</p>
+        </div>
+        <div class="pc-field">
+          <label class="pc-label" for="qishu">中奖期数</label>
+          <input id="qishu" type="text" placeholder="如 82">
+          <p class="pc-hint">用于替换话术里的 {期数},并写入导出文件名。</p>
+        </div>
+      </section>
+
+      <section class="param-card">
+        <div class="pc-head"><span class="pc-num">2</span><span class="pc-desc">设置问卷与订单的统计时段</span></div>
+        <div class="pc-field">
+          <span class="pc-label">问卷提交时间范围</span>
+          <button type="button" class="btn plain time-btn" id="btnTimeForm">⏱ 不限 ~ 不限</button>
+          <p class="pc-hint">只统计这段时间内提交的问卷,不设置则不限。</p>
+        </div>
+        <div class="pc-field">
+          <span class="pc-label">订单支付时间范围</span>
+          <button type="button" class="btn plain time-btn" id="btnTimeOrder">⏱ 不限 ~ 不限</button>
+          <p class="pc-hint">只统计这段时间内支付的订单,不设置则不限。</p>
+        </div>
+      </section>
+
+      <section class="param-card">
+        <div class="pc-head"><span class="pc-num">3</span><span class="pc-desc">设定有效单的金额与渠道门槛</span></div>
+        <div class="pc-field">
+          <label class="pc-label" for="minAmount">最低订单金额(元)</label>
+          <input id="minAmount" type="number" value="999">
+          <p class="pc-hint">订单金额低于该值时不纳入有效单。</p>
+        </div>
+        <div class="pc-field">
+          <label class="pc-label" for="prefix">有效渠道前缀</label>
+          <input id="prefix" type="text" value="grow_xcg_zhuanjs_xiaoshou">
+          <p class="pc-hint">只统计渠道号以该前缀开头的订单。</p>
+        </div>
+        <div class="pc-field">
+          <label class="pc-label" for="threshold">巅峰门槛累计金额(元)</label>
+          <input id="threshold" type="number" value="20000">
+          <p class="pc-hint">同一工号累计达到该金额后,该笔及之后出单计入巅峰池。</p>
+        </div>
+      </section>
+
+      <section class="param-card">
+        <div class="pc-head"><span class="pc-num">4</span><span class="pc-desc">按需开启单量排行排序</span></div>
+        <div class="pc-field">
+          <label class="pc-check" for="rankByCount"><input id="rankByCount" type="checkbox"> 审核单量排行</label>
+          <p class="pc-hint">勾选后,明细表按工号出单单数从多到少排序,并显示单数列。</p>
+        </div>
+        <p class="pc-status-label">当前状态</p>
+        <div class="pc-status off" id="rankStatus"><span class="dot"></span>未勾选 · 明细表保持默认顺序</div>
+      </section>
     </div>
     <div class="rules-panel" id="rulesPanel">
       <div class="rules-head">
@@ -344,6 +388,20 @@ document.querySelectorAll('.tab').forEach(function (t) {
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     toggle.innerHTML = (open ? '收起规则' : '展开规则') + ' <span class="chev">▾</span>';
   });
+})();
+
+// 审核单量排行的当前状态随勾选同步
+(function () {
+  var cb = document.getElementById('rankByCount');
+  var box = document.getElementById('rankStatus');
+  if (!cb || !box) return;
+  function sync() {
+    var on = cb.checked;
+    box.classList.toggle('off', !on);
+    box.innerHTML = '<span class="dot"></span>' + (on ? '已勾选 · 排行排序已启用' : '未勾选 · 明细表保持默认顺序');
+  }
+  cb.addEventListener('change', sync);
+  sync();
 })();
 </script>
 </body>
