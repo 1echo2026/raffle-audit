@@ -404,6 +404,72 @@ document.querySelectorAll('.tab').forEach(function (t) {
   cb.addEventListener('change', sync);
   sync();
 })();
+
+// 参数自动保存:填过即存本机,刷新/重开自动恢复;步骤条蓝色跟随当前操作的卡片
+(function () {
+  var KEY = 'raffle_param_inputs_v1';
+  var FIELDS = ['period','qishu','prefix','minAmount','threshold','formStart','formEnd','orderStart','orderEnd'];
+  var inputIds = {};
+  FIELDS.forEach(function (id) { inputIds[id] = document.getElementById(id); });
+  var rankCb = document.getElementById('rankByCount');
+  var fBtn = document.getElementById('btnTimeForm');
+  var oBtn = document.getElementById('btnTimeOrder');
+
+  function fmtT(v) { return v ? v.replace('T', ' ') : '不限'; }
+  function refreshTimeBtn(btn, a, b) {
+    btn.textContent = '⏱ ' + fmtT(a.value) + ' ~ ' + fmtT(b.value);
+    btn.classList.toggle('set', !!(a.value || b.value));
+  }
+
+  // ---- 恢复(脚本位于 body 末尾,元素均已就绪;早于 app.js 的 DOMContentLoaded 绑定) ----
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved) {
+      FIELDS.forEach(function (id) {
+        if (saved[id] != null && inputIds[id]) inputIds[id].value = saved[id];
+      });
+      if (rankCb && saved.rankByCount != null && rankCb.checked !== !!saved.rankByCount) {
+        rankCb.checked = !!saved.rankByCount;
+        rankCb.dispatchEvent(new Event('change'));
+      }
+      refreshTimeBtn(fBtn, inputIds.formStart, inputIds.formEnd);
+      refreshTimeBtn(oBtn, inputIds.orderStart, inputIds.orderEnd);
+    }
+  } catch (e) {}
+
+  // ---- 填过即自动保存 ----
+  var timer = null;
+  function save() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      var data = { v: 1 };
+      FIELDS.forEach(function (id) { data[id] = inputIds[id] ? inputIds[id].value : ''; });
+      data.rankByCount = rankCb ? rankCb.checked : false;
+      try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
+    }, 150);
+  }
+  FIELDS.forEach(function (id) {
+    if (!inputIds[id]) return;
+    inputIds[id].addEventListener('input', save);
+    inputIds[id].addEventListener('change', save);
+  });
+  if (rankCb) rankCb.addEventListener('change', save);
+  // 时间弹窗保存/清除时(app.js 会改隐藏输入框)也同步存
+  ['timeFormSave','timeFormClear','timeOrderSave','timeOrderClear'].forEach(function (bid) {
+    var b = document.getElementById(bid);
+    if (b) b.addEventListener('click', function () { setTimeout(save, 0); });
+  });
+
+  // ---- 步骤条:当前正在操作哪张卡,对应序号变蓝;已填/未填均灰色 ----
+  var sbSteps = document.querySelectorAll('.stepbar .sb-step');
+  var cards = document.querySelectorAll('.param-card');
+  function setCurrent(i) {
+    sbSteps.forEach(function (s, j) { s.classList.toggle('active', j === i); });
+  }
+  cards.forEach(function (card, i) {
+    card.addEventListener('focusin', function () { setCurrent(i); });
+  });
+})();
 </script>
 </body>
 </html>
