@@ -1876,9 +1876,6 @@
     return ws;
   }
 
-  // 异常名单 sheet 已下线(内容并入"异常名单沟通话术"),保留函数名以免旧引用报错
-  function abnormalSheet(comm) { return commSheet(comm); }
-
   function downloadAll() {
     if (!lastResult) return;
     var r = lastResult;
