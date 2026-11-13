@@ -829,7 +829,7 @@
   function rankMode() {
     return !!(document.getElementById('rankByCount') && document.getElementById('rankByCount').checked);
   }
-  // 可编辑表格单元格(明细表 基地/姓名/工号/出单手机号/奖品;无效名单 无效原因)
+  // 可编辑表格单元格(明细表 基地/姓名/工号/出单手机号/奖品;无效名单 全数据列;话术表 全部内容列)
   function edCell(fi, f, value, kws) {
     return '<span class="ed" contenteditable="true" spellcheck="false" data-fi="' + fi + '" data-f="' + f + '">' + hl(value, kws) + '</span>';
   }
@@ -926,15 +926,21 @@
     var h = ['<div class="muted search-count">无效共 ' + invAll.length + ' 人'
       + '；重复剔除 ' + dupsAll.length + ' 人'
       + (kws.length ? ' · 匹配 无效 ' + list.length + ' / 重复 ' + dups.length : '')
-      + ' · 点击"无效原因"单元格可直接修改</div>'];
+      + ' · 点击任意数据单元格可直接修改</div>'];
     h.push('<table class="grid invalid-grid"><tr><th>序号</th><th>奖池</th><th>昵称</th><th>基地</th><th>姓名</th><th>手机号</th><th>工号</th><th>奖品</th><th>应属奖池</th><th>提交时间</th><th>无效原因</th><th>操作</th></tr>');
     list.forEach(function (s, i) {
-      h.push('<tr' + (s.is_carry ? ' class="carry-row"' : '') + '><td>' + (i + 1) + '</td><td>' + hl(s.pool, kws) + '</td><td>' + hl(s.nickname, kws) + '</td>'
-        + '<td>' + hl(s.base, kws) + '</td><td>' + hl(s.real_name, kws) + '</td><td>' + hl(s.phone, kws) + '</td>'
-        + '<td>' + hl(s.gonghao || '—', kws) + '</td>'
-        + '<td>' + hl(s.prize_name, kws) + '</td><td>' + hl(s.expected_pool || '—', kws) + '</td>'
-        + '<td>' + hl(s.submit_time_raw || '—', kws) + '</td>'
-        + '<td class="reason">' + edCell(s.form_i == null ? '' : s.form_i, 'reason', s.invalid_reasons, kws) + '</td>'
+      var fi = s.form_i == null ? '' : s.form_i;
+      h.push('<tr' + (s.is_carry ? ' class="carry-row"' : '') + '><td>' + (i + 1) + '</td>'
+        + '<td>' + edCell(fi, 'pool', s.pool, kws) + '</td>'
+        + '<td>' + edCell(fi, 'nickname', s.nickname, kws) + '</td>'
+        + '<td>' + edCell(fi, 'base', s.base, kws) + '</td>'
+        + '<td>' + edCell(fi, 'name', s.real_name, kws) + '</td>'
+        + '<td>' + edCell(fi, 'phone', s.phone, kws) + '</td>'
+        + '<td>' + edCell(fi, 'gh', s.gonghao || '', kws) + '</td>'
+        + '<td>' + edCell(fi, 'prize', s.prize_name, kws) + '</td>'
+        + '<td>' + edCell(fi, 'expool', s.expected_pool || '', kws) + '</td>'
+        + '<td>' + edCell(fi, 'stime', s.submit_time_raw || '', kws) + '</td>'
+        + '<td class="reason">' + edCell(fi, 'reason', s.invalid_reasons, kws) + '</td>'
         + '<td class="ops"><div class="ops-stack"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button>'
         + '<button type="button" class="btn plain btn-min pending-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">'
         + (s.audit_result
@@ -1489,17 +1495,29 @@
   }
   function saveInvalidEdit(el) {
     var fi = parseInt(el.getAttribute('data-fi'), 10);
+    var f = el.getAttribute('data-f');
     if (isNaN(fi)) return;
     var s = findSub(fi);
     if (!s) return;
     var v = (el.textContent || '').trim();
-    if (v === (s.invalid_reasons || '')) return;
-    s.invalid_reasons = v;
-    if (AuditCore.classifyAbnormal) s.abnormal_type = AuditCore.classifyAbnormal(s);
-    (lastResult.communication || []).forEach(function (c) { if (c.form_i === fi) c.reason = v; });
+    var fieldMap = {pool: 'pool', nickname: 'nickname', base: 'base', name: 'real_name',
+                    phone: 'phone', gh: 'gonghao', prize: 'prize_name', expool: 'expected_pool',
+                    stime: 'submit_time_raw', reason: 'invalid_reasons'};
+    var commMap = {pool: 'pool', nickname: 'nickname', base: 'base', name: 'real_name',
+                   phone: 'phone', gh: 'gonghao', prize: 'prize_name', expool: 'expected_pool',
+                   stime: 'submit_time', reason: 'reason'};
+    var label = {pool: '奖池', nickname: '昵称', base: '基地', name: '姓名', phone: '手机号',
+                 gh: '工号', prize: '奖品', expool: '应属奖池', stime: '提交时间', reason: '无效原因'};
+    var key = fieldMap[f];
+    if (!key) return;
+    var old = s[key] || '';
+    if (v === old) return;
+    s[key] = v;
+    if (f === 'reason' && AuditCore.classifyAbnormal) s.abnormal_type = AuditCore.classifyAbnormal(s);
+    (lastResult.communication || []).forEach(function (c) { if (c.form_i === fi) c[commMap[f]] = v; });
     renderInvalid(lastResult);
     renderComm(lastResult);
-    log('已修改无效原因: ' + (s.real_name || s.nickname) + ' → ' + (v || '(已清空)'));
+    log('已修改无效名单(' + (label[f] || f) + '): ' + (old || '—') + ' → ' + (v || '—'));
   }
 
   // 异常名单沟通话术:筛选(奖池/基地/异常类型,带具体数目) + 查找 + 单元格编辑
@@ -1556,7 +1574,7 @@
       '<button type="button" class="btn plain btn-min" id="cfReset">重置筛选</button>' +
       '<span class="muted">共 ' + all.length + ' 条 · 当前筛选 ' + list.length + ' 条'
       + (kws.length ? ' · 查找命中 ' + list.length + ' 条' : '')
-      + ' · 点击 基地/姓名/工号/手机号/奖池/奖品/异常类型/异常原因/处理话术/报备审核 可直接修改</span></div>';
+      + ' · 点击 基地/姓名/工号/手机号/奖池/奖品/异常类型/异常原因/处理话术/报备审核 可直接修改 · 处理话术右键可一键复制</span></div>';
     var cols = ['基地','姓名','工号','出单手机号','奖池','奖品','异常类型','异常原因','提交时间','处理话术','报备审核'];
     var rows = [bar + '<table class="grid"><tr><th>序号</th>'];
     cols.forEach(function (c) { rows.push('<th>' + c + '</th>'); });
@@ -2180,12 +2198,25 @@
     });
     document.getElementById('previewInvalid').addEventListener('focusout', function (e) {
       var el = e.target;
-      if (el && el.classList && el.classList.contains('ed') && el.getAttribute('data-f') === 'reason') saveInvalidEdit(el);
+      if (el && el.classList && el.classList.contains('ed')) saveInvalidEdit(el);
     });
     // 话术表单元格编辑(基地/姓名/工号/手机号/异常原因/处理话术/报备审核)
     document.getElementById('previewComm').addEventListener('focusout', function (e) {
       var el = e.target;
       if (el && el.classList && el.classList.contains('ed') && /^c/.test(el.getAttribute('data-f') || '')) saveCommEdit(el);
+    });
+    // 话术表"处理话术"列:右键一键复制话术
+    document.getElementById('previewComm').addEventListener('contextmenu', function (e) {
+      var el = e.target;
+      while (el && el !== this && !(el.getAttribute && el.getAttribute('data-f') === 'cscript')) el = el.parentElement;
+      if (!el || el === this) return;
+      e.preventDefault();
+      var text = (el.textContent || '').replace(/\u00a0/g, ' ').trim();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { log('话术已复制: ' + (text || '(空)')); }, function () { log('复制失败,请手动选中复制'); });
+      } else {
+        log('当前浏览器不支持一键复制,请手动选中复制');
+      }
     });
     // 明细表单元格编辑
     document.getElementById('previewDetail').addEventListener('focusout', function (e) {
