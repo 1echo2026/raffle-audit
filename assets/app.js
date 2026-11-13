@@ -1143,7 +1143,7 @@
     persistManual();
   }
 
-  // 无效名单"待审核":话术表审核结果列填"待审核通过补发"
+  // 无效名单"待审核":无效原因填"待审核通过后补发奖品",话术表审核结果列填"待审核通过补发"
   function markPendingReview(fi) {
     var s = findSub(fi);
     if (!s) { alert('未找到该记录'); return; }
@@ -1154,7 +1154,8 @@
       log('已取消待审核: ' + (s.real_name || s.nickname));
     } else {
       o.audit = '待审核通过补发';
-      log('已标记待审核: ' + (s.real_name || s.nickname) + ' → 话术表审核结果填「待审核通过补发」', 'ok');
+      s.invalid_reasons = '待审核通过后补发奖品';
+      log('已标记待审核: ' + (s.real_name || s.nickname) + ' → 无效原因填「待审核通过后补发奖品」', 'ok');
     }
     applyOverrides(lastResult);
     renderInvalid(lastResult);
@@ -1502,7 +1503,7 @@
   }
 
   // 异常名单沟通话术:筛选(奖池/基地/异常类型,带具体数目) + 查找 + 单元格编辑
-  var commEdits = {};   // form_i -> {base,real_name,gonghao,phone,reason,script,audit_result}
+  var commEdits = {};   // form_i -> {base,real_name,gonghao,phone,pool,prize_name,abnormal_type,reason,script,audit_result}
   function commEffective(c) {
     var patch = commEdits[c.form_i];
     if (!patch) return c;
@@ -1555,7 +1556,7 @@
       '<button type="button" class="btn plain btn-min" id="cfReset">重置筛选</button>' +
       '<span class="muted">共 ' + all.length + ' 条 · 当前筛选 ' + list.length + ' 条'
       + (kws.length ? ' · 查找命中 ' + list.length + ' 条' : '')
-      + ' · 点击 基地/姓名/工号/手机号/异常原因/处理话术/报备审核 可直接修改</span></div>';
+      + ' · 点击 基地/姓名/工号/手机号/奖池/奖品/异常类型/异常原因/处理话术/报备审核 可直接修改</span></div>';
     var cols = ['基地','姓名','工号','出单手机号','奖池','奖品','异常类型','异常原因','提交时间','处理话术','报备审核'];
     var rows = [bar + '<table class="grid"><tr><th>序号</th>'];
     cols.forEach(function (c) { rows.push('<th>' + c + '</th>'); });
@@ -1568,8 +1569,8 @@
         + '<td>' + edCell(pt, 'cname', name, kws) + '</td>'
         + '<td>' + edCell(pt, 'cgh', c.gonghao || '', kws) + '</td>'
         + '<td>' + edCell(pt, 'cphone', c.phone, kws) + '</td>'
-        + '<td>' + hl(c.pool, kws) + '</td><td>' + hl(c.prize_name, kws) + '</td>'
-        + '<td class="reason" style="text-align:left">' + hl(c.abnormal_type, kws) + '</td>'
+        + '<td>' + edCell(pt, 'cpool', c.pool, kws) + '</td><td>' + edCell(pt, 'cprize', c.prize_name, kws) + '</td>'
+        + '<td class="reason" style="text-align:left">' + edCell(pt, 'ctype', c.abnormal_type, kws) + '</td>'
         + '<td class="reason" style="text-align:left">' + edCell(pt, 'creason', commReason(c), kws) + '</td>'
         + '<td>' + hl(c.submit_time || '—', kws) + '</td>'
         + '<td class="reason" style="text-align:left">' + edCell(pt, 'cscript', commScript(c), kws) + '</td>'
@@ -1585,6 +1586,7 @@
     var f = el.getAttribute('data-f');
     var v = (el.textContent || '').trim();
     var map = {cbase: 'base', cname: 'real_name', cgh: 'gonghao', cphone: 'phone',
+               cpool: 'pool', cprize: 'prize_name', ctype: 'abnormal_type',
                creason: 'reason', cscript: 'script', caudit: 'audit_result'};
     var field = map[f];
     if (!field) return;
@@ -1594,6 +1596,7 @@
     renderComm(lastResult);
     persistManual();
     log('已修改话术表(' + ({cbase: '基地', cname: '姓名', cgh: '工号', cphone: '出单手机号',
+      cpool: '奖池', cprize: '奖品', ctype: '异常类型',
       creason: '异常原因', cscript: '处理话术', caudit: '报备审核'}[f] || f) + '): ' + (v || '(已清空)'));
   }
   // 异常原因:非转介绍/非销售直推时把订单池匹配到的渠道前缀码显式带出
