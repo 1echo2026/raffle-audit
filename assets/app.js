@@ -1215,7 +1215,7 @@
     codes.push(out);
     saveGreenCodes(codes);
     renderGreenCodes();
-    log('已生成绿色通道码: ' + out + '(共 ' + codes.length + ' 个)。将码填在问卷"出单用户手机号/ID"栏即可直接通过', 'ok');
+    log('已生成绿色通道码: ' + out + '(共 ' + codes.length + ' 个)。将码填在问卷"出单用户手机号/ID"栏,或写在姓名后面,即可直接通过', 'ok');
     return out;
   }
   function renderGreenCodes() {
@@ -1224,11 +1224,11 @@
     var codes = loadGreenCodes();
     if (!codes.length) {
       box.classList.remove('has-codes');
-      box.innerHTML = '<div class="gc-tip">暂无绿色通道码。点「生成绿色通道码」后,把码告知抽奖人填写在问卷<b>「出单用户手机号/ID」</b>栏,审核时自动放行并出现在中奖名单。</div>';
+      box.innerHTML = '<div class="gc-tip">暂无绿色通道码。点「生成绿色通道码」后,把码告知抽奖人填写在问卷<b>「出单用户手机号/ID」</b>栏,或直接<b>备注在姓名后面</b>,审核时都会自动放行并出现在中奖名单。</div>';
       return;
     }
     box.classList.add('has-codes');
-    box.innerHTML = '<div class="muted">绿色通道码(填在问卷"出单手机号/ID"栏即直接通过):</div><div class="gc-list">' +
+    box.innerHTML = '<div class="muted">绿色通道码(填在问卷"出单手机号/ID"栏,或写在姓名后面,即直接通过):</div><div class="gc-list">' +
       codes.map(function (c) {
         return '<span class="gc-chip"><b>' + esc(c) + '</b>' +
           '<button type="button" class="btn plain btn-min gc-copy" data-c="' + esc(c) + '">复制</button>' +

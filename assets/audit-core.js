@@ -68,6 +68,37 @@
     return p.length >= 7 ? p.slice(0, 3) + '****' + p.slice(-4) : p;
   }
 
+  // 绿色通道码识别:从任意文本中提取已生成的码(忽略大小写、空格与括号等分隔符)
+  // 兼容「张三 8K3D92AB」「张三(8K3D92AB)」「张三 GREEN-8K3D-92」等写在姓名后面的情形
+  function findGreenCode(text, greenSet) {
+    if (!text || !greenSet) return '';
+    var t = String(text).toUpperCase().replace(/[^0-9A-Z]/g, '');
+    if (!t) return '';
+    for (var k in greenSet) {
+      if (!greenSet.hasOwnProperty(k) || !k) continue;
+      // 纯数字码要求整串相等,避免 11 位手机号里恰好包含该数字串而误放行
+      if (/^\d+$/.test(k) ? (t === k) : (t.indexOf(k) >= 0)) return k;
+    }
+    return '';
+  }
+
+  // 从姓名字段中剥掉绿色通道码,只保留干净姓名(用于中奖名单展示与导出)
+  function stripGreenCode(text, code) {
+    var t = String(text === null || text === undefined ? '' : text);
+    if (!code) return t.trim();
+    // 码的每个字符之间允许分隔符,前后允许残留括号与 GREEN 前缀
+    var loose = code.split('').map(function (ch) {
+      return ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }).join('[\\s\\-_.]*');
+    var re = new RegExp('(GREEN[\\s\\-_.]*)?[（(\\[【]?[\\s\\-_.]*' + loose + '[\\s\\-_.]*[）)\\]】]?', 'gi');
+    var out = t.replace(re, ' ')
+      .replace(/GREEN/gi, ' ')
+      .replace(/[\s\u3000]+/g, ' ')
+      .replace(/^[\s\-_·,，、:：()（）\[\]【】]+|[\s\-_·,，、:：()（）\[\]【】]+$/g, '')
+      .trim();
+    return out || t.trim();
+  }
+
   // 姓名精确匹配用的归一化:去全部空白、转小写(中文姓名不区分大小写,英文姓名忽略空格)
   function normName(v) {
     return String(v === null || v === undefined ? '' : v).replace(/[\s\u3000\u00a0]+/g, '').toLowerCase();
@@ -736,11 +767,18 @@
 
     submissions.forEach(function (s) {
       var reasons = [], remark = '';
-      // 绿色通道:问卷"出单手机号/ID"栏填写绿色通道码 → 直接通过(跳过全部检查)
-      var gcKey = String(s.phone || '').trim().toUpperCase();
-      if (gcKey && GREEN_SET[gcKey]) {
-        s.green_code = gcKey;
-        s.green_note = '绿色通道码放行';
+      // 绿色通道:问卷"出单手机号/ID"栏填码,或在姓名/昵称后备注码 → 直接通过(跳过全部检查)
+      var gcKey = findGreenCode(s.phone, GREEN_SET) ||
+                  (GREEN_SET[String(s.phone || '').trim().toUpperCase()] || '');
+      var gcName = gcKey ? '' : (findGreenCode(s.real_name, GREEN_SET) || findGreenCode(s.nickname, GREEN_SET));
+      if (gcKey || gcName) {
+        s.green_code = gcKey || gcName;
+        s.green_note = gcName ? '姓名备注绿色通道码放行' : '绿色通道码放行';
+        // 姓名后备注的码从姓名中剥离,避免"张三 8K3D92AB"这样的脏姓名进中奖名单与导出
+        if (gcName) {
+          s.real_name = stripGreenCode(s.real_name, gcName);
+          s.nickname = stripGreenCode(s.nickname, gcName);
+        }
         s.invalid_reasons = '';
         s.abnormal_type = '';
         s.remark = '';
@@ -1028,6 +1066,8 @@
     fmtMoney: fmtMoney,
     cleanPhone: cleanPhone,
     maskPhone: maskPhone,
+    findGreenCode: findGreenCode,
+    stripGreenCode: stripGreenCode,
     parsePrizeText: parsePrizeText
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

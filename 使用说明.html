@@ -431,9 +431,10 @@
   <p>点击 <span class="ui">编辑话术模板</span>（按钮下方有「独立页面」小字）会在新的独立页面管理全部话术模板，详见<b>第 10 章</b>。模板修改后自动保存在本机，审核主页直接读取。</p>
 
   <h3 class="sec" id="c5-2">5.2　生成绿色通道码</h3>
-  <p>用于处理<b>临时放行</b>场景。点击 <span class="ui">生成绿色通道码</span> 即刻生成一个形如 <code class="inline">GREEN-8K3D-92</code> 的一次性码（按钮上的绿点表示当前已有生成的码）。</p>
+  <p>用于处理<b>临时放行</b>场景。点击 <span class="ui">生成绿色通道码</span> 即刻生成一个 8 位的一次性码（如 <code class="inline">8K3D92AB</code>，按钮上的绿点表示当前已有生成的码）。</p>
   <ul class="dot">
-    <li>把绿码告知抽奖人，让其填写在问卷的<span class="ui">出单用户手机号/ID</span>栏，系统识别到绿码后<b>自动放行并入名单</b>；</li>
+    <li>把绿码告知抽奖人，让其填写在问卷的<span class="ui">出单用户手机号/ID</span>栏，或直接<b>备注在姓名后面</b>（如 <code class="inline">张三 8K3D92AB</code>、<code class="inline">张三(8K3D92AB)</code>、<code class="inline">张三 GREEN-8K3D-92</code> 均可），系统识别到绿码后<b>自动放行并入名单</b>；</li>
+    <li>备注在姓名里的码会自动从姓名中去掉，中奖名单与导出只保留干净姓名；码与列表中的码比对时不区分大小写，是否夹空格、括号、连字符都不影响识别；</li>
     <li>已生成的绿码以浮层形式列在按钮下方，每条可单独<span class="ui gray">复制</span> / <span class="ui red">删除</span>，也可<span class="ui gray">清空全部</span>；</li>
     <li>绿码只保存在当前浏览器中。</li>
   </ul>
@@ -666,7 +667,7 @@
   </div>
   <div class="faq-item">
     <div class="q">绿色通道码如何使用？</div>
-    <div class="a">点「生成绿色通道码」后把码发给抽奖人，让其填在问卷「出单用户手机号/ID」栏，系统识别后自动放行并入名单；用完可在绿码浮层中删除或清空。</div>
+    <div class="a">点「生成绿色通道码」后把码发给抽奖人，让其填在问卷「出单用户手机号/ID」栏，或直接备注在姓名后面（如「张三 8K3D92AB」），系统识别后自动放行并入名单，姓名里的码会自动去掉；用完可在绿码浮层中删除或清空。</div>
   </div>
   <div class="faq-item">
     <div class="q">导出的两个文件分别是什么？</div>
