@@ -1170,15 +1170,22 @@
   }
 
   // 无效名单"待审核":无效原因填"待审核通过后补发奖品",话术表审核结果列填"待审核通过补发"
+  // 标记前先记住原无效原因,取消待审核时还原 → 无效名单的无效原因与话术表的异常原因/处理话术恢复为标记前的内容
   function markPendingReview(fi) {
     var s = findSub(fi);
     if (!s) { alert('未找到该记录'); return; }
     var o = overrides[fi] = overrides[fi] || {};
     if (o.audit === '待审核通过补发') {
       delete o.audit;
+      // 无效原因仍是待审核文案(期间未手动改过)才还原;手动改过则保留改后文字
+      if (o.pending_prev != null && s.invalid_reasons === '待审核通过后补发奖品') {
+        s.invalid_reasons = o.pending_prev;
+      }
+      delete o.pending_prev;
       if (!o.rejected && !o.green_code) delete overrides[fi];
-      log('已取消待审核: ' + (s.real_name || s.nickname));
+      log('已取消待审核: ' + (s.real_name || s.nickname) + ' → 无效原因与沟通话术已还原');
     } else {
+      o.pending_prev = s.invalid_reasons;
       o.audit = '待审核通过补发';
       s.invalid_reasons = '待审核通过后补发奖品';
       log('已标记待审核: ' + (s.real_name || s.nickname) + ' → 无效原因填「待审核通过后补发奖品」', 'ok');
