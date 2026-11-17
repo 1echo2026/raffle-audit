@@ -931,6 +931,7 @@
     });
 
     // 9) 图片格式分组(仅有效、去重后;保持问卷顺序)
+    // 分组键 = 奖池 + 奖项等级 + 奖品名称:同等级出现多个二选一奖品时各自成组,不再互相合并
     function tierGroups(pool, maxLevel) {
       var buckets = {};
       for (var lv = 1; lv <= maxLevel; lv++) buckets[lv] = [];
@@ -950,16 +951,26 @@
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0,
-                is_new: !!s.is_new};
+                is_new: !!s.is_new,
+                prize_name: s.prize_name || ''};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
         if (!buckets[l] || !buckets[l].length) continue;
-        out.push({
-          level: l,
-          level_text: NUM_CN[l] + '等奖',
-          prize: buckets[l][0].prize_name,
-          rows: buckets[l].map(toRow)
+        // 同等级内按"奖品名称"再分一次(按该奖品在问卷中首现的顺序),二选一奖品不再被并进第一个奖品
+        var byPrize = {}, pOrder = [];
+        buckets[l].forEach(function (s) {
+          var k = s.prize_name || '未填写奖品';
+          if (!byPrize[k]) { byPrize[k] = []; pOrder.push(k); }
+          byPrize[k].push(s);
+        });
+        pOrder.forEach(function (k) {
+          out.push({
+            level: l,
+            level_text: NUM_CN[l] + '等奖',
+            prize: k,
+            rows: byPrize[k].map(toRow)
+          });
         });
       }
       // 问卷奖品文本无法解析出等级的行:不丢弃,按奖品名称聚合展示

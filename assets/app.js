@@ -622,11 +622,20 @@
     var h = ['<table class="winner-table">'];
     h.push('<tr><th colspan="4" class="title-row">' + esc(title) + '</th></tr>');
     h.push('<tr><th class="h-pink">奖品等级</th><th class="h-pink">奖品</th><th class="h-pink">基地</th><th class="h-pink">姓名</th></tr>');
+    // 同等级可能因奖品不同拆成多个分组:等级格只在该等级首块出现并跨该等级全部行合并;
+    // 奖品格按组内行数合并(同奖品一块,奖品不同另起一块)
+    var levelRows = {};
     groups.forEach(function (g) {
+      levelRows[g.level_text] = (levelRows[g.level_text] || 0) + g.rows.length;
+    });
+    var seenLevel = {};
+    groups.forEach(function (g) {
+      var isFirst = !seenLevel[g.level_text];
+      seenLevel[g.level_text] = true;
       g.rows.forEach(function (r, i) {
         h.push('<tr>');
         if (i === 0) {
-          h.push('<td class="lv" rowspan="' + g.rows.length + '">' + esc(g.level_text) + '</td>');
+          if (isFirst) h.push('<td class="lv" rowspan="' + levelRows[g.level_text] + '">' + esc(g.level_text) + '</td>');
           h.push('<td class="pz" rowspan="' + g.rows.length + '">' + esc(g.prize) + '</td>');
         }
         h.push('<td class="base">' + esc(r.base) + '</td><td class="nm">' + esc(r.name) + '</td></tr>');
@@ -851,7 +860,7 @@
         pp[1].forEach(function (g) {
           g.rows.forEach(function (x) {
             items.push({pool: pp[0], base: x.base, name: x.name, gh: x.gonghao || '', phone: x.phone,
-              lvText: g.level_text, prize: g.prize, conv: x.convert_amount || 0, count: x.order_count || 0,
+              lvText: g.level_text, prize: x.prize_name || '', conv: x.convert_amount || 0, count: x.order_count || 0,
               total: null, green: x.green_code || '', fi: x.form_i, submit: x.submit_time || '',
               isCarry: !!x.is_carry});
           });
@@ -982,6 +991,7 @@
   }
 
   // 按 validList 重建 groups(绿色通道转入的人也要出现在获奖名单/明细/导出)
+  // 分组键 = 奖池 + 奖项等级 + 奖品名称:同等级二选一奖品各自成组;手工改过的奖品以该行自身值为准
   function rebuildGroups(r) {
     var CN = ['一','二','三','四','五','六','七','八'];
     function tg(pool, maxLevel) {
@@ -1002,12 +1012,22 @@
                 green_code: s.green_code || '', green_pass_manual: !!s.green_pass_manual,
                 form_i: s.form_i, account: s.account || '',
                 convert_amount: s.convert_amount || 0, order_count: s.order_count || 0,
-                is_carry: !!s.is_carry};
+                is_carry: !!s.is_carry,
+                prize_name: s.prize_name || ''};
       }
       var out = [];
       for (var l = 1; l <= maxLevel; l++) {
         if (!buckets[l] || !buckets[l].length) continue;
-        out.push({level: l, level_text: CN[l - 1] + '等奖', prize: buckets[l][0].prize_name, rows: buckets[l].map(toRow)});
+        // 同等级内按"奖品名称"再分一次(按该奖品在问卷中首现的顺序)
+        var byPrize = {}, pOrder = [];
+        buckets[l].forEach(function (s) {
+          var k = s.prize_name || '未填写奖品';
+          if (!byPrize[k]) { byPrize[k] = []; pOrder.push(k); }
+          byPrize[k].push(s);
+        });
+        pOrder.forEach(function (k) {
+          out.push({level: l, level_text: CN[l - 1] + '等奖', prize: k, rows: byPrize[k].map(toRow)});
+        });
       }
       if (ungraded.length) {
         var byName = {}, order = [];
@@ -1761,16 +1781,26 @@
       r++;
       aoaRows.push(['奖品等级', '奖品', '基地', '姓名']);
       r++;
+      // 同等级可能拆成多个奖品分组:等级格只在该等级首块写入并跨该等级全部行合并,奖品格按组内行数合并
+      var levelRows = {};
       groups.forEach(function (g) {
+        levelRows[g.level_text] = (levelRows[g.level_text] || 0) + g.rows.length;
+      });
+      var seenLevel = {};
+      groups.forEach(function (g) {
+        var isFirstLevel = !seenLevel[g.level_text];
+        seenLevel[g.level_text] = true;
         var start = r;
         g.rows.forEach(function (x, i) {
-          if (i === 0) aoaRows.push([g.level_text, g.prize, x.base, x.name]);
+          if (i === 0) aoaRows.push([isFirstLevel ? g.level_text : '', g.prize, x.base, x.name]);
           else aoaRows.push(['', '', x.base, x.name]);
           r++;
         });
         var end = r - 1;
+        if (isFirstLevel && levelRows[g.level_text] > 1) {
+          merges.push({s: {r: start, c: 0}, e: {r: start + levelRows[g.level_text] - 1, c: 0}});
+        }
         if (end > start) {
-          merges.push({s: {r: start, c: 0}, e: {r: end, c: 0}});
           merges.push({s: {r: start, c: 1}, e: {r: end, c: 1}});
         }
       });
@@ -1819,7 +1849,7 @@
           var p0 = String(x.phone || '').trim();
           var ph = (p0 === '' || /^0+$/.test(p0)) ? '' : p0;
           rows.push([x.base || '', x.name || '', x.gonghao || '', ph, x.convert_amount || 0,
-                     x.account || '', x.order_time || '', pp[0], g.level_text || '', g.prize || '',
+                     x.account || '', x.order_time || '', pp[0], g.level_text || '', x.prize_name || '',
                      x.green_code || '']);
         });
       });
