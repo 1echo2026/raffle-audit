@@ -16,6 +16,7 @@
   var pendingEdit = null;    // 修改弹窗正在处理的 form_i
   var HIST_KEY = 'raffle_history_v1';
   var GREEN_KEY = 'raffle_green_codes_v1';  // 首页生成的绿色通道码(填在问卷"出单手机号/ID"栏即放行)
+  var gcCollapsed = false;                  // 绿色通道码列表是否折叠(仅本页状态,不持久化)
 
   // ---------- 异常话术模板(独立页面维护,存 localStorage;常量与读写见 templates-core.js) ----------
   var templates = (window.TplCore ? TplCore.load() : []);
@@ -1248,6 +1249,7 @@
     var codes = loadGreenCodes();
     codes.push(out);
     saveGreenCodes(codes);
+    gcCollapsed = false;   // 新生成的码必须可见,自动展开列表
     renderGreenCodes();
     log('已生成绿色通道码: ' + out + '(共 ' + codes.length + ' 个)。将码填在问卷"出单用户手机号/ID"栏,或写在姓名后面,即可直接通过', 'ok');
     return out;
@@ -1258,17 +1260,29 @@
     var codes = loadGreenCodes();
     if (!codes.length) {
       box.classList.remove('has-codes');
+      gcCollapsed = false;
       box.innerHTML = '<div class="gc-tip">暂无绿色通道码。点「生成绿色通道码」后,把码告知抽奖人填写在问卷<b>「出单用户手机号/ID」</b>栏,或直接<b>备注在姓名后面</b>,审核时都会自动放行并出现在中奖名单。</div>';
       return;
     }
     box.classList.add('has-codes');
-    box.innerHTML = '<div class="muted">绿色通道码(填在问卷"出单手机号/ID"栏,或写在姓名后面,即直接通过):</div><div class="gc-list">' +
-      codes.map(function (c) {
-        return '<span class="gc-chip"><b>' + esc(c) + '</b>' +
-          '<button type="button" class="btn plain btn-min gc-copy" data-c="' + esc(c) + '">复制</button>' +
-          '<button type="button" class="btn plain btn-min gc-del" data-c="' + esc(c) + '">删除</button></span>';
-      }).join('') +
-      '<button type="button" class="btn plain btn-min" id="gcClear">清空全部</button></div>';
+    box.classList.toggle('collapsed', gcCollapsed);
+    // 折叠时用短标题(面板同步收窄),展开时保留完整说明
+    var h = '<div class="gc-head"><span class="muted">' +
+      (gcCollapsed
+        ? '绿色通道码（共 ' + codes.length + ' 个）'
+        : '绿色通道码(填在问卷"出单手机号/ID"栏,或写在姓名后面,即直接通过):') +
+      '</span><button type="button" class="btn plain btn-min" id="gcFold">' +
+      (gcCollapsed ? '▸ 展开' : '▾ 折叠') + '</button></div>';
+    if (!gcCollapsed) {
+      h += '<div class="gc-list">' +
+        codes.map(function (c) {
+          return '<span class="gc-chip"><b>' + esc(c) + '</b>' +
+            '<button type="button" class="btn plain btn-min gc-copy" data-c="' + esc(c) + '">复制</button>' +
+            '<button type="button" class="btn plain btn-min gc-del" data-c="' + esc(c) + '">删除</button></span>';
+        }).join('') +
+        '<button type="button" class="btn plain btn-min" id="gcClear">清空全部</button></div>';
+    }
+    box.innerHTML = h;
   }
   // 无效名单行内"通过"按钮:直接转入中奖名单,无需复制粘贴码(码后台自动生成仅留凭证)
   function greenPass(fi) {
@@ -2161,6 +2175,11 @@
       if (!el || el === this) return;
       if (el.id === 'gcClear') {
         if (confirm('确定清空全部绿色通道码?')) { saveGreenCodes([]); renderGreenCodes(); log('已清空绿色通道码'); }
+        return;
+      }
+      if (el.id === 'gcFold') {
+        gcCollapsed = !gcCollapsed;
+        renderGreenCodes();
         return;
       }
       var c = el.getAttribute('data-c');

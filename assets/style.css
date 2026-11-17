@@ -462,6 +462,9 @@ body.resizing-cols, body.resizing-cols * {
   background: #f8fcff; border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px;
   box-shadow: 0 8px 24px rgba(15,35,55,.14);
 }
+/* 折叠态:只留标题与展开按钮,面板收窄 */
+.tb-pop #greenCodesBox.has-codes.collapsed { min-width: 210px; max-width: 260px; padding: 8px 10px; }
+.tb-pop #greenCodesBox.has-codes.collapsed .gc-head { flex-wrap: nowrap; }
 /* 深色提示气泡(暂无绿色通道码) */
 .gc-tip {
   position: relative;
@@ -477,6 +480,9 @@ body.resizing-cols, body.resizing-cols * {
 }
 .gc-tip b { color: #7cc4ff; font-weight: bold; }
 .green-codes { margin: 10px 0 4px; }
+.gc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.gc-head .muted { flex: 1 1 auto; min-width: 0; }
+.gc-head .btn-min { margin: 0; flex: 0 0 auto; }
 .gc-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .gc-chip {
   display: inline-flex; align-items: center; gap: 6px;
