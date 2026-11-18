@@ -948,7 +948,8 @@
         + '<td>' + edCell(fi, 'phone', s.phone, kws) + '</td>'
         + '<td>' + edCell(fi, 'gh', s.gonghao || '', kws) + '</td>'
         + '<td>' + edCell(fi, 'prize', s.prize_name, kws) + '</td>'
-        + '<td>' + edCell(fi, 'expool', s.expected_pool || '', kws) + '</td>'
+        + '<td>' + edCell(fi, 'expool', s.expected_pool || '', kws)
+        + (s.redraw_fixed ? '<span class="redraw-tag">（已正确补抽）</span>' : '') + '</td>'
         + '<td>' + edCell(fi, 'stime', s.submit_time_raw || '', kws) + '</td>'
         + '<td class="reason">' + edCell(fi, 'reason', s.invalid_reasons, kws) + '</td>'
         + '<td class="ops"><div class="ops-stack"><button type="button" class="btn plain btn-min pass-btn" data-fi="' + (s.form_i == null ? '' : s.form_i) + '">✅ 通过</button>'

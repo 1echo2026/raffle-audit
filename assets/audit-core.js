@@ -715,49 +715,12 @@
       s.abnormal_status = Object.keys(ab).join('、');
     });
 
-    // 6) 一手机号一单去重(保留提交时间最早的一条)
+    // 6) 同一手机号的提交归组(这里只归组,不剔除)
+    //    唯一性改为在资格判定之后按"有效记录"裁决:无效记录不占名额,
+    //    详见步骤 7.5;这样"先抽错池、后抽对池"不会被误剔除。
     var groups = {};
-    submissions.forEach(function (s, i) { if (s.phone_format_ok) (groups[s.phone] = groups[s.phone] || []).push(i); });
+    submissions.forEach(function (s) { if (s.phone_format_ok) (groups[s.phone] = groups[s.phone] || []).push(s); });
     var duplicates = [];
-    Object.keys(groups).forEach(function (phone) {
-      var idxs = groups[phone];
-      if (idxs.length <= 1) return;
-      idxs.sort(function (a, b) {
-        var da = submissions[a].submit_dt, db = submissions[b].submit_dt;
-        return (da ? da.getTime() : 8.64e15) - (db ? db.getTime() : 8.64e15);
-      });
-      // 同一手机号在最早提交时刻有多条记录时(例如进阶全量表单与巅峰表单包含
-      // 完全相同的提交),优先保留巅峰奖池那条 —— 巅峰表单是该奖池的精确来源,
-      // 避免巅峰提交被进阶副本按数组顺序误判为重复而整池丢失。
-      var earliest = idxs[0];
-      var firstT = submissions[earliest].submit_dt ? submissions[earliest].submit_dt.getTime() : 8.64e15;
-      idxs.forEach(function (i) {
-        var t = submissions[i].submit_dt ? submissions[i].submit_dt.getTime() : 8.64e15;
-        if (t === firstT && submissions[i].pool === '巅峰' && submissions[earliest].pool !== '巅峰') earliest = i;
-      });
-      // 同一手机号在进阶/巅峰都抽过,且其订单已累计达2万(应属巅峰):
-      // 只保留巅峰奖池奖品,不再保留进阶奖池奖品(先抽进阶、后续累计达标的情形)
-      if (submissions[earliest].expected_pool === '巅峰') {
-        var peakIdx = -1;
-        idxs.forEach(function (i) { if (submissions[i].pool === '巅峰') peakIdx = i; });
-        if (peakIdx >= 0) earliest = peakIdx;
-      }
-      idxs.forEach(function (i) {
-        if (i === earliest) return;
-        var kept = submissions[earliest];
-        submissions[i].is_duplicate = true;
-        // 记录被保留的那条信息(奖品/姓名/提交时间),供页面"重复剔除"区块展示对照
-        submissions[i].dup_kept = {
-          form_i: kept.form_i, pool: kept.pool, base: kept.base,
-          real_name: kept.real_name, nickname: kept.nickname,
-          prize_name: kept.prize_name, prize_level: kept.prize_level,
-          submit_time_raw: kept.submit_time_raw, phone: kept.phone
-        };
-        submissions[i].dup_group_size = idxs.length;
-        duplicates.push(submissions[i]);
-      });
-    });
-    submissions.forEach(function (s) { s.is_duplicate = !!s.is_duplicate; });
 
     // 7) 资格判定
     var validList = [], invalidList = [];
@@ -782,7 +745,7 @@
         s.invalid_reasons = '';
         s.abnormal_type = '';
         s.remark = '';
-        if (!s.is_duplicate) validList.push(s);
+        s.green_pass = true;   // 绿色通道直接视为通过,后续仅参与唯一性裁决
         return;
       }
       if (!inRange(s.submit_dt, FORM_START, FORM_END)) {
@@ -840,7 +803,15 @@
             } else if (hasQualified) {
               reasons.push('未在有效订单池查找到（手机号在订单池匹配到多个账号的达标订单，无法唯一归属）');
             } else {
-              reasons.push('未在有效订单池查找到（订单金额不足' + Math.round(MIN_AMT) + '元，未达活动有效条件）');
+              // 无抽奖资格时给出差额,便于人工直接告知还差多少
+              var maxAmt = 0;
+              rawRows.forEach(function (x) {
+                var a = toFloat(x[0][x[1].amount]);
+                if (a > maxAmt) maxAmt = a;
+              });
+              var gap = MIN_AMT - maxAmt;
+              reasons.push('未在有效订单池查找到（订单金额不足' + Math.round(MIN_AMT) + '元，最高 ' +
+                fmtMoney(maxAmt) + ' 元，还差 ' + fmtMoney(gap > 0 ? gap : 0) + ' 元达标，未达活动有效条件）');
             }
           }
         } else {
@@ -849,15 +820,68 @@
       }
       if (!s.avatar_matched) reasons.push('问卷头像与中奖名单无法匹配');
       if (s.match && !s.channel_bad && s.expected_pool && s.pool !== s.expected_pool) {
-        reasons.push(s.peak_reason + '，但本次在' + s.pool + '奖池抽奖');
+        reasons.push('奖池错配（应属' + s.expected_pool + '）：' + s.peak_reason + '，但本次在' + s.pool + '奖池抽奖');
       }
       if (s.remark_note) remark += s.remark_note;
       if (s.abnormal_status) remark += (remark ? '；' : '') + '含' + s.abnormal_status + '订单，请核查';
       s.invalid_reasons = reasons.join('；');
       s.remark = remark;
       s.abnormal_type = classifyAbnormal(s);
-      if (s.is_duplicate) return;
-      (reasons.length ? invalidList : validList).push(s);
+      // 输出要求:归属池、命中池、资格依据、最终状态(最终状态在 7.5 唯一性裁决后确定)
+      s.qualify_basis = s.expected_pool
+        ? ('归属' + s.expected_pool + '奖池（工号累计' + fmtMoney(s.total_amount || 0) +
+           '元，本单' + fmtMoney(s.convert_amount || 0) + '元）')
+        : '无归属奖池（未匹配到有效订单）';
+      s.final_status = reasons.length ? '无效' : '有效';
+    });
+
+    // 7.5) 唯一性与冲突裁决(全局,不限奖池):
+    //   - 每个出单手机号最多 1 条"有效"记录,提交最早的那条中奖;
+    //   - 已中奖号码的其它"本可通过"记录一律拒绝,提示该手机号已中奖;
+    //   - 本身无效的记录不占名额,只回写作废原因与作废时间;
+    //   - 同一手机号出现多条有效记录 = 数据异常,不自动放行,标出待人工复核。
+    var nowText = fmtDt(new Date());
+    Object.keys(groups).forEach(function (ph) {
+      var arr = groups[ph];
+      if (arr.length < 2) return;
+      arr.sort(function (a, b) {
+        return (a.submit_dt ? a.submit_dt.getTime() : 8.64e15) -
+               (b.submit_dt ? b.submit_dt.getTime() : 8.64e15);
+      });
+      var passed = arr.filter(function (s) { return !s.invalid_reasons; });
+      if (!passed.length) return;   // 全部无效:各留各的原因,不占名额
+      var winner = passed[0];
+      arr.forEach(function (s) {
+        if (s === winner) return;
+        if (!s.invalid_reasons) {
+          s.invalid_reasons = '该手机号已中奖（同一手机号本期仅可中奖 1 次）';
+          if (passed.length > 1) {
+            s.dup_anomaly = true;
+            s.invalid_reasons += '；同一手机号存在多条有效记录，数据异常，需人工复核';
+          }
+          s.is_duplicate = true;
+          s.dup_kept = {
+            form_i: winner.form_i, pool: winner.pool, base: winner.base,
+            real_name: winner.real_name, nickname: winner.nickname,
+            prize_name: winner.prize_name, prize_level: winner.prize_level,
+            submit_time_raw: winner.submit_time_raw, phone: winner.phone
+          };
+          s.dup_group_size = passed.length;
+          s.final_status = '作废';
+        } else {
+          s.void_reason = '同一手机号已在' + winner.pool + '奖池中奖，本条记录作废';
+          s.void_time = nowText;
+          s.remark = (s.remark ? s.remark + '；' : '') + s.void_reason;
+          // 抽错奖池的记录:同号已在对的奖池补抽成功 → 标记,供无效名单"应属奖池"列加注
+          if (s.pool && s.expected_pool && s.pool !== s.expected_pool) s.redraw_fixed = true;
+        }
+      });
+    });
+    submissions.forEach(function (s) {
+      s.is_duplicate = !!s.is_duplicate;
+      if (s.is_duplicate) { duplicates.push(s); return; }
+      s.final_status = s.invalid_reasons ? '无效' : '有效';
+      (s.invalid_reasons ? invalidList : validList).push(s);
     });
 
     // 8) 宠粉数据总结(巅峰/进阶两池的出单与参与指标)
