@@ -28,7 +28,9 @@
       '{应属奖池}': c.expected_pool || '', '{奖品}': c.prize_name || '',
       '{原因}': c.reason, '{备注}': c.remark,
       '{期数}': c.qishu || '', '{周期}': c.period || '',
-      '{出单时间}': c.order_time || '', '{单数}': c.peak_orders || '',
+      '{出单时间}': c.order_time || '', '{单数}': c.draw_count || c.peak_orders || '',
+      '{出单金额}': c.order_amount || '',
+      '{用户ID}': c.account || '',
       '{提交时间}': c.submit_time || ''
     };
     var s = tpl.script || '';
@@ -1142,6 +1144,8 @@
       if (o && o.green_code && !o.rejected) return;   // 通过放行的不再进话术表
       comm.push(commEntry(s, r));
     });
+    // 出单未抽奖(订单池有资格但问卷无记录):不随名单重算,直接追加
+    (r.noDraw || []).forEach(function (c) { comm.push(c); });
     r.communication = comm;
     r.stats = r.stats || {};
     r.stats.valid = r.validList.length;

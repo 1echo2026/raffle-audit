@@ -1030,6 +1030,45 @@
     duplicates.forEach(function (s) { communication.push(commBase(s)); });
     validList.forEach(function (s) { if (s.abnormal_status) communication.push(commBase(s)); });
 
+    // 10.1) 出单未抽奖:订单池里已具备中奖资格,但本期问卷完全没有该手机号的提交记录
+    var noDraw = [];
+    var submittedMask = {};
+    submissions.forEach(function (s) {
+      var p = str(s.phone);
+      if (/^1\d{10}$/.test(p)) submittedMask[maskPhone(p)] = 1;
+    });
+    var phAgg = {};
+    Object.keys(orderAgg).forEach(function (oid) {
+      var o = orderAgg[oid], p = str(o.masked);
+      if (!/^1\d{2}\*{4}\d{4}$/.test(p) && !/^1\d{10}$/.test(p)) return;
+      var a = phAgg[p];
+      if (!a) a = phAgg[p] = {amount: 0, max: 0, hasPeak: false, peakOrders: 0, gh: o.gonghao, dt: null, account: o.account || ''};
+      a.amount += o.amount;
+      if (o.amount > a.max) a.max = o.amount;
+      if (o.pool === '巅峰') { a.hasPeak = true; a.peakOrders++; }
+      if (o.dt && (!a.dt || o.dt > a.dt)) a.dt = o.dt;
+    });
+    Object.keys(phAgg).sort().forEach(function (p) {
+      if (submittedMask[p]) return;               // 已参与过抽奖(哪怕无效)的号码不计入
+      var a = phAgg[p];
+      var pool = a.hasPeak ? '巅峰' : (a.max >= MIN_AMT ? '进阶' : '');
+      if (!pool) return;                          // 未达门槛:本就无资格,不算漏抽
+      var st = ghStats[a.gh] || {};
+      var amt = pool === '巅峰' ? a.amount : a.max;
+      noDraw.push({
+        pool: '未抽奖', nickname: '', real_name: st.sales_name || '', base: '', phone: p,
+        prize_name: '', prize_level: '', gonghao: a.gh || '', channel_code: '',
+        submit_time: '', abnormal_type: '出单未抽奖',
+        reason: '出单未抽奖：本期问卷无该手机号提交记录，应属' + pool + '奖池，出单' + fmtMoney(amt) + '元',
+        remark: '', is_duplicate: false, expected_pool: pool,
+        period: PERIOD, qishu: QISHU, order_time: a.dt ? fmtDt(a.dt) : '',
+        peak_orders: a.peakOrders || 0, draw_count: 1, order_amount: fmtMoney(amt),
+        account: a.account || '',
+        audit_result: '', form_i: 'nodraw-' + p
+      });
+    });
+    noDraw.forEach(function (c) { communication.push(c); });
+
     // 有效订单池导出仅保留销售直推渠道行
     function xiaoKept(rows, info) {
       var iCh = info.map.channel;
@@ -1075,11 +1114,13 @@
         invalid: invalidList.length,
         duplicates: duplicates.length,
         ghCount: Object.keys(ghStats).length,
-        ghPeak: Object.keys(ghStats).filter(function (g) { return ghStats[g].peak_since; }).length
+        ghPeak: Object.keys(ghStats).filter(function (g) { return ghStats[g].peak_since; }).length,
+        noDraw: noDraw.length
       },
       validList: validList,
       invalidList: invalidList,
       duplicates: duplicates,
+      noDraw: noDraw,
       communication: communication,
       summary: summary,
       nameGhRows: nameGhRows,
